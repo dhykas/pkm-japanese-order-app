@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Order from table</title>
+  <link rel="stylesheet" href="assets/css/style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700;800&display=swap" rel="stylesheet">
+</head>
+<body class="has-cart-bar">
+  <header class="topbar" id="topbar"></header>
+
+  <main class="container order-layout">
+    <section>
+      <div class="page-head">
+        <div><h1>Menu<span class="jp-title">お品書き</span></h1><p id="tableSub"></p></div>
+        <button class="btn sm soft" id="billBtn" hidden>💳 Request bill</button>
+      </div>
+
+      <div class="menu-tools">
+        <div class="search"><input class="input" id="search" type="search" placeholder="Search the menu…" autocomplete="off"></div>
+        <div class="chips" id="cats"></div>
+      </div>
+      <div class="grid menu" id="menu"></div>
+
+      <div class="section-title">
+        <h2>Your orders</h2>
+        <span class="pill live">Live status</span>
+      </div>
+      <div class="grid my-orders" id="myOrders"></div>
+    </section>
+
+    <aside class="card lift cart" id="cart">
+      <div class="cart-head"><h2>Your cart</h2><span class="pill" id="cartCount">0 items</span></div>
+      <div class="cart-lines" id="cartLines"></div>
+      <div class="sum"><div class="total"><span>Total</span><span id="cartTotal">Rp 0</span></div></div>
+      <textarea class="input" id="note" rows="2" placeholder="Note for the kitchen (no wasabi, extra noodles…)"></textarea>
+      <button class="btn primary lg block" id="placeBtn" disabled>Place order</button>
+      <button class="btn ghost block sm only-mobile" id="closeCart">Close</button>
+    </aside>
+  </main>
+
+  <div class="backdrop" id="backdrop"></div>
+  <button class="cart-bar" id="cartBar"><span id="cartBarLeft">Cart empty</span><span>View cart ›</span></button>
+
+  <script src="assets/js/menu.js"></script>
+  <script src="assets/js/app.js"></script>
+  <script>
+    var params = new URLSearchParams(location.search);
+    var TABLE = parseInt(params.get('table'), 10) || 1;
+    var R = MENU_DATA.restaurant, ITEMS = MENU_DATA.items;
+    var CART_KEY = 'resto_demo_cart_table_' + TABLE;   // cart = sessionStorage (this tab only)
+    var activeCat = 'All', query = '';
+    var cart = loadCart();                             // { itemId: qty }
+
+    renderNav({ area: 'customer', active: 'order', right: '<span class="pill brand">🪑 Table ' + TABLE + '</span>' });
+    document.getElementById('tableSub').textContent = 'Table ' + TABLE + ' · your order goes straight to the kitchen';
+    document.title = 'Table ' + TABLE + ' · ' + R.name;
+
+    function loadCart() { try { return JSON.parse(sessionStorage.getItem(CART_KEY)) || {}; } catch (e) { return {}; } }
+    function saveCart() { sessionStorage.setItem(CART_KEY, JSON.stringify(cart)); }
+    function itemById(id) { return ITEMS.filter(function (i) { return i.id === id; })[0]; }
+
+    /* ---- search + category filter ---- */
+    function renderCats() {
+      var cats = ['All'].concat(MENU_DATA.categories);
+      document.getElementById('cats').innerHTML = cats.map(function (c) {
+        var jp = MENU_DATA.categoryJp && MENU_DATA.categoryJp[c];
+        return '<button class="chip' + (c === activeCat ? ' active' : '') + '" data-cat="' + c + '">' + c + (jp ? '<small>' + jp + '</small>' : '') + '</button>';
+      }).join('');
+    }
+    document.getElementById('cats').addEventListener('click', function (e) {
+      var b = e.target.closest('[data-cat]'); if (!b) return;
+      activeCat = b.dataset.cat; renderCats(); renderMenu();
+    });
+    document.getElementById('search').addEventListener('input', function (e) {
+      query = e.target.value.trim().toLowerCase(); renderMenu();
+    });
+
+    /* ---- menu grid ---- */
+    function renderMenu() {
+      var list = ITEMS.filter(function (i) {
+        var catOk = activeCat === 'All' || i.category === activeCat;
+        var qOk = !query || (i.name + ' ' + (i.jp || '') + ' ' + i.desc).toLowerCase().indexOf(query) >= 0;
+        return catOk && qOk;
+      });
+      var box = document.getElementById('menu');
+      if (!list.length) { box.innerHTML = '<div class="empty" style="grid-column:1/-1"><b>Nothing found</b>Try another word or category.</div>'; return; }
+      box.innerHTML = list.map(function (i) {
+        var q = cart[i.id] || 0;
+        return '<div class="card item' + (q ? ' in-cart' : '') + '">' +
+          (i.popular ? '<span class="badge pop tag">★ Popular</span>' : '') +
+          '<div class="tile">' + i.emoji + '</div>' +
+          '<div class="name">' + esc(i.name) + '</div>' +
+          (i.jp ? '<div class="jp">' + esc(i.jp) + '</div>' : '') +
+          '<div class="desc">' + esc(i.desc) + '</div>' +
+          '<div class="foot"><span class="price">' + rupiah(i.price) + '</span>' +
+          (q ? qtyControl(i.id, q) : '<button class="btn sm" data-inc="' + i.id + '">+ Add</button>') +
+          '</div></div>';
+      }).join('');
+    }
+
+    /* ---- quantity changes: +/− buttons and the editable number, in the menu AND in the cart ---- */
+    function setQty(id, q) {
+      q = Math.floor(Number(q)); if (!isFinite(q)) q = 0;
+      q = Math.max(0, Math.min(999, q));
+      if (q > 0) cart[id] = q; else delete cart[id];
+      saveCart();
+      return q;
+    }
+    document.addEventListener('click', function (e) {
+      var inc = e.target.closest('[data-inc]'), dec = e.target.closest('[data-dec]'), rm = e.target.closest('[data-rm]');
+      if (inc) setQty(inc.dataset.inc, (cart[inc.dataset.inc] || 0) + 1);
+      if (dec) setQty(dec.dataset.dec, (cart[dec.dataset.dec] || 0) - 1);
+      if (rm) setQty(rm.dataset.rm, 0);
+      if (inc || dec || rm) { renderMenu(); renderCart(); }
+    });
+    /* typing a number: update totals live, but never redraw the field being typed in */
+    document.addEventListener('input', function (e) {
+      var inp = e.target.closest('[data-qty]'); if (!inp || inp.value === '') return;
+      setQty(inp.dataset.qty, inp.value);
+      if (inp.closest('#cart')) { renderMenu(); renderCart(true); } else renderCart();
+    });
+    /* leaving the field (blur / Enter): normalise the value and redraw everything */
+    document.addEventListener('change', function (e) {
+      var inp = e.target.closest('[data-qty]'); if (!inp) return;
+      if (inp.value !== '') setQty(inp.dataset.qty, inp.value);
+      renderMenu(); renderCart();
+    });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Enter' && e.target.closest('[data-qty]')) e.target.blur(); });
+    document.addEventListener('focusin', function (e) { var inp = e.target.closest('[data-qty]'); if (inp) inp.select(); });
+
+    /* ---- cart ---- */
+    function cartItems() {
+      return Object.keys(cart).map(function (id) {
+        var it = itemById(id);
+        return { id: id, name: it.name, price: it.price, qty: cart[id] };
+      });
+    }
+    function renderCart(skipLines) {
+      var items = cartItems();
+      var total = items.reduce(function (t, i) { return t + i.price * i.qty; }, 0);
+      var count = items.reduce(function (t, i) { return t + i.qty; }, 0);
+      if (!skipLines) document.getElementById('cartLines').innerHTML = items.length
+        ? items.map(function (i) {
+            return '<div class="line"><div><div class="n">' + esc(i.name) + '</div><div class="sub">' + rupiah(i.price) + ' each</div></div>' +
+              qtyControl(i.id, i.qty, { small: true }) +
+              '<span class="amt">' + rupiah(i.price * i.qty) + '</span></div>';
+          }).join('')
+        : '<div class="empty" style="padding:22px 12px"><b>Your cart is empty</b>Add something tasty from the menu.</div>';
+      document.getElementById('cartTotal').textContent = rupiah(total);
+      document.getElementById('cartCount').textContent = count + ' item' + (count === 1 ? '' : 's');
+      document.getElementById('placeBtn').disabled = !items.length;
+      document.getElementById('cartBarLeft').textContent = count ? count + ' item' + (count > 1 ? 's' : '') + ' · ' + rupiah(total) : 'Cart empty';
+    }
+    function openCart(open) {
+      document.getElementById('cart').classList.toggle('open', open);
+      document.getElementById('backdrop').classList.toggle('show', open);
+    }
+    document.getElementById('cartBar').addEventListener('click', function () { openCart(true); });
+    document.getElementById('closeCart').addEventListener('click', function () { openCart(false); });
+    document.getElementById('backdrop').addEventListener('click', function () { openCart(false); });
+
+    /* ---- checkout: confirm → send → "being processed" ---- */
+    function draftOrder() {
+      return makeOrder({ type: 'table', table: TABLE, items: cartItems(), note: document.getElementById('note').value.trim() });
+    }
+    document.getElementById('placeBtn').addEventListener('click', function () {
+      if (!cartItems().length) return;
+      var d = draftOrder();
+      showModal({
+        title: 'Confirm your order',
+        sub: 'Table ' + TABLE + ' · ' + orderQty(d) + ' item' + (orderQty(d) === 1 ? '' : 's'),
+        body: itemLines(d) +
+          (d.note ? '<div class="note">📝 ' + esc(d.note) + '</div>' : '') +
+          sumLines(d) +
+          '<p class="muted small">The kitchen starts right away. You pay at the cashier when you\'re done.</p>',
+        actions: [
+          { label: 'Back', cls: 'ghost' },
+          { label: 'Confirm order', cls: 'primary', onClick: placeOrder }
+        ]
+      });
+    });
+    function placeOrder() {
+      if (!cartItems().length) return;
+      var order = draftOrder();
+      Store.add(order);
+      cart = {}; saveCart();
+      document.getElementById('note').value = '';
+      renderMenu(); renderCart(); openCart(false); renderMyOrders();
+      showModal({
+        cls: 'success', icon: '🍜',
+        title: 'Order #' + order.number + ' received!',
+        sub: 'Table ' + TABLE + ' · ' + fmtTime(order.createdAt),
+        body: '<span class="processing">Your food is being processed</span>' +
+          '<p>The kitchen has your order. Follow its status under <b>Your orders</b> — we\'ll bring it to your table.</p>',
+        actions: [{ label: 'Track my order', cls: 'primary', onClick: function () {
+          document.getElementById('myOrders').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        } }]
+      });
+    }
+
+    /* ---- request bill ---- */
+    document.getElementById('billBtn').addEventListener('click', function () {
+      Store.requestBill(TABLE);
+      toast('Bill requested. The cashier is on the way 💳');
+    });
+
+    /* ---- my orders (live status from the cashier) ---- */
+    var lastStatus = {};
+    function renderMyOrders() {
+      var mine = Store.all().filter(function (o) { return orderType(o) === 'table' && o.table === TABLE; });
+      var open = mine.filter(function (o) { return o.status !== 'paid'; });
+      var billBtn = document.getElementById('billBtn');
+      billBtn.hidden = !open.length;
+      if (open.length && open.every(function (o) { return o.billRequested; })) { billBtn.disabled = true; billBtn.textContent = '✓ Bill requested'; }
+      else { billBtn.disabled = false; billBtn.textContent = '💳 Request bill'; }
+
+      var box = document.getElementById('myOrders');
+      if (!mine.length) { box.innerHTML = '<div class="empty" style="grid-column:1/-1"><b>No orders yet</b>Your orders and their kitchen status will show up here.</div>'; return; }
+      box.innerHTML = mine.map(function (o) {
+        return '<div class="card order' + (o.status === 'paid' ? ' is-paid' : '') + '">' +
+          '<div class="head"><div><div class="who">Order #' + o.number + '</div><div class="meta">' + fmtTime(o.createdAt) + ' · ' + timeAgo(o.createdAt) + '</div></div>' +
+          '<div class="badges"><span class="badge ' + o.status + '">' + statusLabel(o) + '</span>' + (o.billRequested && o.status !== 'paid' ? '<span class="badge bill">Bill requested</span>' : '') + '</div></div>' +
+          itemLines(o) +
+          (o.note ? '<div class="note">📝 ' + esc(o.note) + '</div>' : '') +
+          sumLines(o) + stepsHtml(o) +
+          '</div>';
+      }).join('');
+
+      mine.forEach(function (o) {
+        if (lastStatus[o.id] && lastStatus[o.id] !== o.status) {
+          var msg = { cooking: 'is being cooked 🔥', served: 'has been served 🍽️', paid: 'is paid. Thank you! 🙏' }[o.status];
+          if (msg) toast('Order #' + o.number + ' ' + msg);
+        }
+        lastStatus[o.id] = o.status;
+      });
+    }
+
+    renderCats(); renderMenu(); renderCart(); renderMyOrders();
+    Store.onChange(renderMyOrders);
+    setInterval(renderMyOrders, 30000);
+  </script>
+</body>
+</html>

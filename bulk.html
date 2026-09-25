@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Bento &amp; platters</title>
+  <link rel="stylesheet" href="assets/css/style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700;800&display=swap" rel="stylesheet">
+</head>
+<body class="has-cart-bar">
+  <header class="topbar" id="topbar"></header>
+
+  <main class="container order-layout">
+    <section>
+      <div class="page-head">
+        <div><h1>Bento &amp; platters<span class="jp-title">弁当・大皿</span></h1><p>Bento boxes, sushi platters and party trays for offices, schools and events. Order at least one day ahead.</p></div>
+      </div>
+
+      <div class="card pad" style="margin-bottom:16px">
+        <div class="row between wrap" style="margin-bottom:10px">
+          <h3>Bulk pricing</h3>
+          <span class="muted small">Discount is applied automatically to the whole order</span>
+        </div>
+        <div class="tiers" id="tiers"></div>
+      </div>
+
+      <div class="menu-tools">
+        <div class="chips" id="cats"></div>
+      </div>
+      <div class="grid menu" id="menu"></div>
+
+      <div class="section-title">
+        <h2>Your bulk orders</h2>
+        <span class="pill live">Live status</span>
+      </div>
+      <div class="grid my-orders" id="myOrders"></div>
+    </section>
+
+    <aside class="card lift cart" id="cart">
+      <div class="cart-head"><h2>Order summary</h2><span class="pill" id="cartCount">0 items</span></div>
+      <div class="cart-lines" id="cartLines"></div>
+      <div id="discountBox"></div>
+      <div id="sums"></div>
+
+      <div class="stack" id="form">
+        <h3 style="margin-top:4px">Your details</h3>
+        <div class="field"><label for="fName">Name / company</label><input class="input" id="fName" placeholder="e.g. Budi Santoso or PT Maju Jaya"><div class="hint"></div></div>
+        <div class="field"><label for="fPhone">WhatsApp / phone</label><input class="input" id="fPhone" type="tel" placeholder="0812 3456 7890"><div class="hint">We confirm every bulk order by WhatsApp.</div></div>
+        <div class="field"><label>Pickup or delivery</label>
+          <div class="seg" id="fMethod"><button type="button" data-m="pickup" class="active">🏪 Pickup</button><button type="button" data-m="delivery">🛵 Delivery</button></div>
+        </div>
+        <div class="row" style="align-items:flex-start">
+          <div class="field" style="flex:1"><label for="fDate">Date</label><input class="input" id="fDate" type="date"><div class="hint"></div></div>
+          <div class="field" style="flex:1"><label for="fTime">Time</label><input class="input" id="fTime" type="time" value="11:00"><div class="hint"></div></div>
+        </div>
+        <div class="field" id="fAddrWrap" hidden><label for="fAddr">Delivery address</label><textarea class="input" id="fAddr" rows="2" placeholder="Street, building, floor…"></textarea><div class="hint"></div></div>
+        <div class="field"><label for="fNote">Notes</label><textarea class="input" id="fNote" rows="2" placeholder="No wasabi, vegetarian boxes, invoice needed…"></textarea></div>
+      </div>
+
+      <button class="btn primary lg block" id="placeBtn" disabled>Send bulk order</button>
+      <button class="btn ghost block sm only-mobile" id="closeCart">Close</button>
+    </aside>
+  </main>
+
+  <div class="backdrop" id="backdrop"></div>
+  <button class="cart-bar" id="cartBar"><span id="cartBarLeft">No items yet</span><span>Review order ›</span></button>
+
+  <script src="assets/js/menu.js"></script>
+  <script src="assets/js/app.js"></script>
+  <script>
+    var R = MENU_DATA.restaurant, BULK = MENU_DATA.bulk, ITEMS = BULK.items;
+    var CART_KEY = 'resto_demo_bulk_cart';          // sessionStorage: this tab only
+    var MINE_KEY = 'resto_demo_my_bulk_ids';        // localStorage: bulk orders placed from this browser
+    var activeCat = 'All', method = 'pickup';
+    var cart = loadCart();
+
+    renderNav({ area: 'customer', active: 'bulk', right: '<span class="pill brand">🍱 Save up to ' + BULK.tiers[BULK.tiers.length - 1].pct + '%</span>' });
+    document.title = 'Bento & platters · ' + R.name;
+
+    function loadCart() { try { return JSON.parse(sessionStorage.getItem(CART_KEY)) || {}; } catch (e) { return {}; } }
+    function saveCart() { sessionStorage.setItem(CART_KEY, JSON.stringify(cart)); }
+    function myIds() { try { return JSON.parse(localStorage.getItem(MINE_KEY)) || []; } catch (e) { return []; } }
+    function itemById(id) { return ITEMS.filter(function (i) { return i.id === id; })[0]; }
+    function cartItems() {
+      return Object.keys(cart).map(function (id) { var it = itemById(id); return { id: id, name: it.name, price: it.price, qty: cart[id] }; });
+    }
+    function subtotal() { return cartItems().reduce(function (t, i) { return t + i.price * i.qty; }, 0); }
+
+    /* ---- date defaults: earliest = today + lead time ---- */
+    var minDate = new Date(); minDate.setDate(minDate.getDate() + BULK.leadTimeDays);
+    var fDate = document.getElementById('fDate');
+    fDate.min = isoDate(minDate); fDate.value = isoDate(minDate);
+
+    /* ---- tiers ---- */
+    function renderTiers() {
+      var sub = subtotal();
+      document.getElementById('tiers').innerHTML = BULK.tiers.map(function (t) {
+        return '<div class="tier' + (sub >= t.minSubtotal ? ' hit' : '') + '"><b>' + t.pct + '% off</b>orders from ' + rupiah(t.minSubtotal) + (sub >= t.minSubtotal ? ' · unlocked ✓' : '') + '</div>';
+      }).join('');
+    }
+
+    /* ---- categories + menu ---- */
+    function renderCats() {
+      var cats = ['All'].concat(BULK.categories);
+      document.getElementById('cats').innerHTML = cats.map(function (c) {
+        var jp = BULK.categoryJp && BULK.categoryJp[c];
+        return '<button class="chip' + (c === activeCat ? ' active' : '') + '" data-cat="' + c + '">' + c + (jp ? '<small>' + jp + '</small>' : '') + '</button>';
+      }).join('');
+    }
+    document.getElementById('cats').addEventListener('click', function (e) {
+      var b = e.target.closest('[data-cat]'); if (!b) return;
+      activeCat = b.dataset.cat; renderCats(); renderMenu();
+    });
+    function renderMenu() {
+      var list = ITEMS.filter(function (i) { return activeCat === 'All' || i.category === activeCat; });
+      document.getElementById('menu').innerHTML = list.map(function (i) {
+        var q = cart[i.id] || 0;
+        return '<div class="card item' + (q ? ' in-cart' : '') + '">' +
+          (i.popular ? '<span class="badge pop tag">★ Popular</span>' : '') +
+          '<div class="tile">' + i.emoji + '</div>' +
+          '<div class="name">' + esc(i.name) + '</div>' +
+          (i.jp ? '<div class="jp">' + esc(i.jp) + '</div>' : '') +
+          '<div class="desc">' + esc(i.desc) + '</div>' +
+          '<div class="foot"><span><span class="price">' + rupiah(i.price) + '</span> <span class="unit">/ ' + i.unit + (i.min > 1 ? ' · min ' + i.min : '') + '</span></span>' +
+          (q ? qtyControl(i.id, q, { min: i.min }) : '<button class="btn sm" data-inc="' + i.id + '">+ Add ' + i.min + '</button>') +
+          '</div></div>';
+      }).join('');
+    }
+
+    /* ---- quantity changes with minimums: first add jumps to the minimum, going below it removes the item,
+            a typed number below the minimum is raised to it when the field is left ---- */
+    function setQty(id, q, enforceMin) {
+      var it = itemById(id);
+      q = Math.floor(Number(q)); if (!isFinite(q)) q = 0;
+      q = Math.max(0, Math.min(999, q));
+      if (enforceMin && q > 0 && q < it.min) { q = it.min; toast('Minimum for ' + it.name + ' is ' + it.min + ' ' + it.unit); }
+      if (q > 0) cart[id] = q; else delete cart[id];
+      saveCart();
+      return q;
+    }
+    function redraw(skipLines) { renderMenu(); renderCart(skipLines); renderTiers(); }
+    document.addEventListener('click', function (e) {
+      var inc = e.target.closest('[data-inc]'), dec = e.target.closest('[data-dec]'), rm = e.target.closest('[data-rm]');
+      if (inc) { var it = itemById(inc.dataset.inc); setQty(it.id, cart[it.id] ? cart[it.id] + 1 : it.min); }
+      if (dec) {
+        var it2 = itemById(dec.dataset.dec), nq = (cart[it2.id] || 0) - 1;
+        if (nq < it2.min) { setQty(it2.id, 0); toast('Removed (minimum is ' + it2.min + ' ' + it2.unit + ')'); } else setQty(it2.id, nq);
+      }
+      if (rm) setQty(rm.dataset.rm, 0);
+      if (inc || dec || rm) redraw();
+    });
+    /* typing: live totals without redrawing the field being typed in */
+    document.addEventListener('input', function (e) {
+      var inp = e.target.closest('[data-qty]'); if (!inp || inp.value === '') return;
+      setQty(inp.dataset.qty, inp.value, false);
+      if (inp.closest('#cart')) redraw(true); else { renderCart(); renderTiers(); }
+    });
+    /* leaving the field: apply the minimum and redraw everything */
+    document.addEventListener('change', function (e) {
+      var inp = e.target.closest('[data-qty]'); if (!inp) return;
+      if (inp.value !== '') setQty(inp.dataset.qty, inp.value, true);
+      redraw();
+    });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Enter' && e.target.closest('[data-qty]')) e.target.blur(); });
+    document.addEventListener('focusin', function (e) { var inp = e.target.closest('[data-qty]'); if (inp) inp.select(); });
+
+    /* ---- summary panel ---- */
+    function renderCart(skipLines) {
+      var items = cartItems(), sub = subtotal(), d = bulkDiscount(sub);
+      var count = items.reduce(function (t, i) { return t + i.qty; }, 0);
+      var discount = Math.round(sub * d.pct / 100), total = sub - discount;
+
+      if (!skipLines) document.getElementById('cartLines').innerHTML = items.length
+        ? items.map(function (i) {
+            var it = itemById(i.id);
+            return '<div class="line"><div><div class="n">' + esc(i.name) + '</div><div class="sub">' + rupiah(i.price) + ' / ' + it.unit + '</div></div>' +
+              qtyControl(i.id, i.qty, { small: true, min: it.min }) +
+              '<span class="amt">' + rupiah(i.price * i.qty) + '</span></div>';
+          }).join('')
+        : '<div class="empty" style="padding:22px 12px"><b>No items yet</b>Pick bento boxes and platters from the menu.</div>';
+
+      var box = document.getElementById('discountBox');
+      if (!items.length) {
+        box.innerHTML = '<div class="discount-box">Bulk discounts start at ' + rupiah(BULK.tiers[0].minSubtotal) + '.</div>';
+      } else if (d.next) {
+        var pct = Math.min(100, sub / d.next.minSubtotal * 100);
+        box.innerHTML = '<div class="discount-box' + (d.pct ? ' hit' : '') + '"><span>' + (d.pct ? '<b>' + d.pct + '% off applied.</b> ' : '') +
+          'Add <b>' + rupiah(d.next.minSubtotal - sub) + '</b> more to unlock <b>' + d.next.pct + '% off</b>.</span>' +
+          '<div class="progress"><i style="width:' + pct + '%"></i></div></div>';
+      } else {
+        box.innerHTML = '<div class="discount-box hit"><span><b>' + d.pct + '% off applied</b> — our best bulk price 🎉</span></div>';
+      }
+
+      document.getElementById('sums').innerHTML = '<div class="sum">' +
+        '<div><span>Subtotal</span><span>' + rupiah(sub) + '</span></div>' +
+        (discount ? '<div class="disc"><span>Bulk discount ' + d.pct + '%</span><span>−' + rupiah(discount) + '</span></div>' : '') +
+        '<div class="total"><span>Total</span><span>' + rupiah(total) + '</span></div></div>';
+
+      document.getElementById('cartCount').textContent = count + ' item' + (count === 1 ? '' : 's');
+      document.getElementById('placeBtn').disabled = !items.length;
+      document.getElementById('cartBarLeft').textContent = count ? count + ' items · ' + rupiah(total) + (d.pct ? ' (' + d.pct + '% off)' : '') : 'No items yet';
+    }
+    function openCart(open) {
+      document.getElementById('cart').classList.toggle('open', open);
+      document.getElementById('backdrop').classList.toggle('show', open);
+    }
+    document.getElementById('cartBar').addEventListener('click', function () { openCart(true); });
+    document.getElementById('closeCart').addEventListener('click', function () { openCart(false); });
+    document.getElementById('backdrop').addEventListener('click', function () { openCart(false); });
+
+    /* ---- form ---- */
+    document.getElementById('fMethod').addEventListener('click', function (e) {
+      var b = e.target.closest('[data-m]'); if (!b) return;
+      method = b.dataset.m;
+      document.querySelectorAll('#fMethod button').forEach(function (x) { x.classList.toggle('active', x === b); });
+      document.getElementById('fAddrWrap').hidden = method !== 'delivery';
+    });
+    function setErr(id, msg) {
+      var input = document.getElementById(id), field = input.closest('.field'), hint = field.querySelector('.hint');
+      field.classList.toggle('error', !!msg);
+      if (msg) hint.textContent = msg;
+      else if (id === 'fPhone') hint.textContent = 'We confirm every bulk order by WhatsApp.';
+      else hint.textContent = '';
+    }
+    function validate() {
+      var ok = true, v = function (id) { return document.getElementById(id).value.trim(); };
+      var checks = [
+        ['fName', !v('fName') && 'Please enter a name or company'],
+        ['fPhone', !/^\d{8,15}$/.test(v('fPhone').replace(/\D/g, '')) && 'Enter a valid phone number'],
+        ['fDate', (!v('fDate') && 'Pick a date') || (v('fDate') < fDate.min && 'Earliest is ' + fmtDate(fDate.min) + ' (' + BULK.leadTimeDays + ' day ahead)')],
+        ['fTime', !v('fTime') && 'Pick a time'],
+        ['fAddr', method === 'delivery' && !v('fAddr') && 'Enter the delivery address']
+      ];
+      checks.forEach(function (c) { setErr(c[0], c[1] || ''); if (c[1]) ok = false; });
+      return ok;
+    }
+    ['fName', 'fPhone', 'fDate', 'fTime', 'fAddr'].forEach(function (id) {
+      document.getElementById(id).addEventListener('input', function () { setErr(id, ''); });
+    });
+
+    /* ---- checkout: validate → confirm → send → "being processed" ---- */
+    function draftOrder() {
+      var v = function (id) { return document.getElementById(id).value.trim(); };
+      return makeOrder({
+        type: 'bulk', items: cartItems(), note: v('fNote'),
+        customer: { name: v('fName'), phone: v('fPhone'), method: method, date: v('fDate'), time: v('fTime'), address: method === 'delivery' ? v('fAddr') : '' }
+      });
+    }
+    function detailsHtml(c) {
+      return '<div class="info"><span>' + (c.method === 'delivery' ? '🛵 Delivery' : '🏪 Pickup') + ' · <b>' + fmtDate(c.date) + ' · ' + esc(c.time) + '</b></span>' +
+        '<span>👤 ' + esc(c.name) + ' · 📞 ' + esc(c.phone) + '</span>' +
+        (c.address ? '<span>📍 ' + esc(c.address) + '</span>' : '') + '</div>';
+    }
+    document.getElementById('placeBtn').addEventListener('click', function () {
+      if (!cartItems().length) return;
+      if (!validate()) { openCart(true); toast('Please check the highlighted fields'); return; }
+      var d = draftOrder();
+      showModal({
+        title: 'Confirm your bulk order',
+        sub: orderQty(d) + ' items' + (d.discountPct ? ' · ' + d.discountPct + '% bulk discount applied' : ''),
+        body: itemLines(d) + sumLines(d) + detailsHtml(d.customer) +
+          (d.note ? '<div class="note">📝 ' + esc(d.note) + '</div>' : ''),
+        actions: [
+          { label: 'Back', cls: 'ghost' },
+          { label: 'Send order', cls: 'primary', onClick: placeOrder }
+        ]
+      });
+    });
+    function placeOrder() {
+      if (!cartItems().length) return;
+      var order = draftOrder();
+      Store.add(order);
+      localStorage.setItem(MINE_KEY, JSON.stringify([order.id].concat(myIds())));
+      cart = {}; saveCart();
+      document.getElementById('fNote').value = '';
+      renderMenu(); renderCart(); renderTiers(); openCart(false); renderMyOrders();
+      var c = order.customer;
+      showModal({
+        cls: 'success', icon: '🍱',
+        title: 'Bulk order #' + order.number + ' received!',
+        sub: (c.method === 'delivery' ? 'Delivery' : 'Pickup') + ' · ' + fmtDate(c.date) + ' · ' + esc(c.time),
+        body: '<span class="processing">Your order is being processed</span>' +
+          '<p>We\'ll confirm it by WhatsApp at <b>' + esc(c.phone) + '</b>. Follow the status under <b>Your bulk orders</b>.</p>',
+        actions: [{ label: 'Track my order', cls: 'primary', onClick: function () {
+          document.getElementById('myOrders').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        } }]
+      });
+    }
+
+    /* ---- my bulk orders (live) ---- */
+    var lastStatus = {};
+    function renderMyOrders() {
+      var ids = myIds();
+      var mine = Store.all().filter(function (o) { return orderType(o) === 'bulk' && ids.indexOf(o.id) >= 0; });
+      var box = document.getElementById('myOrders');
+      if (!mine.length) { box.innerHTML = '<div class="empty" style="grid-column:1/-1"><b>No bulk orders yet</b>Orders you place from this device show up here with their status.</div>'; return; }
+      box.innerHTML = mine.map(function (o) {
+        var c = o.customer || {};
+        return '<div class="card order' + (o.status === 'paid' ? ' is-paid' : '') + '">' +
+          '<div class="head"><div><div class="who">Order #' + o.number + '</div><div class="meta">placed ' + fmtTime(o.createdAt) + ' · ' + timeAgo(o.createdAt) + '</div></div>' +
+          '<div class="badges"><span class="badge ' + o.status + '">' + statusLabel(o) + '</span></div></div>' +
+          '<div class="info"><span>' + (c.method === 'delivery' ? '🛵 Delivery' : '🏪 Pickup') + ' · ' + fmtDate(c.date) + ' · ' + esc(c.time) + '</span>' +
+          (c.address ? '<span>📍 ' + esc(c.address) + '</span>' : '') + '</div>' +
+          itemLines(o) +
+          (o.note ? '<div class="note">📝 ' + esc(o.note) + '</div>' : '') +
+          sumLines(o) + stepsHtml(o) +
+          '</div>';
+      }).join('');
+      mine.forEach(function (o) {
+        if (lastStatus[o.id] && lastStatus[o.id] !== o.status) {
+          var msg = { cooking: 'is confirmed and being prepared 👩‍🍳', served: 'is ready 📦', paid: 'is paid. Thank you! 🙏' }[o.status];
+          if (msg) toast('Bulk order #' + o.number + ' ' + msg);
+        }
+        lastStatus[o.id] = o.status;
+      });
+    }
+
+    renderTiers(); renderCats(); renderMenu(); renderCart(); renderMyOrders();
+    Store.onChange(renderMyOrders);
+    setInterval(renderMyOrders, 30000);
+  </script>
+</body>
+</html>

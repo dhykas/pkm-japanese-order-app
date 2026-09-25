@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Cashier</title>
+  <link rel="stylesheet" href="assets/css/style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+  <header class="topbar" id="topbar"></header>
+
+  <main class="container">
+    <div class="page-head">
+      <div><h1>Cashier</h1><p>Orders arrive here live from the tables and from the bulk order form.</p></div>
+      <div class="row wrap">
+        <button class="btn sm" id="seedBtn" title="Insert a few dummy orders">+ Sample orders</button>
+        <button class="btn sm ghost" id="clearBtn">Reset</button>
+      </div>
+    </div>
+
+    <div class="grid stats" id="stats"></div>
+
+    <div class="section-title"><h2>Floor</h2><span class="muted small">Click a table to open its ordering page</span></div>
+    <div class="grid floor" id="floor"></div>
+
+    <div class="section-title">
+      <h2>Orders</h2>
+      <div class="row wrap">
+        <div class="seg" id="typeSeg">
+          <button type="button" data-t="all" class="active">All</button>
+          <button type="button" data-t="table">🪑 Table</button>
+          <button type="button" data-t="bulk">🍱 Bulk</button>
+        </div>
+        <div class="chips" id="filters"></div>
+      </div>
+    </div>
+    <div class="grid orders" id="orders"></div>
+  </main>
+
+  <script src="assets/js/menu.js"></script>
+  <script src="assets/js/app.js"></script>
+  <script>
+    var R = MENU_DATA.restaurant;
+    var typeF = 'all', statusF = 'active';
+    var known = {};   // order ids already seen, used to detect new arrivals
+    Store.all().forEach(function (o) { known[o.id] = true; });
+
+    renderNav({ area: 'staff', active: 'cashier', right: '<span class="pill live">Live</span>' });
+
+    document.getElementById('typeSeg').addEventListener('click', function (e) {
+      var b = e.target.closest('[data-t]'); if (!b) return;
+      typeF = b.dataset.t;
+      document.querySelectorAll('#typeSeg button').forEach(function (x) { x.classList.toggle('active', x === b); });
+      render();
+    });
+    document.getElementById('filters').addEventListener('click', function (e) {
+      var b = e.target.closest('[data-f]'); if (!b) return;
+      statusF = b.dataset.f; render();
+    });
+    document.getElementById('orders').addEventListener('click', function (e) {
+      var adv = e.target.closest('[data-advance]'), del = e.target.closest('[data-remove]');
+      if (adv) {
+        var o = Store.byId(adv.dataset.advance);
+        var next = o && STATUS_FLOW[STATUS_FLOW.indexOf(o.status) + 1];
+        if (next) {
+          Store.update(o.id, { status: next, billRequested: next === 'paid' ? false : o.billRequested });
+          toast(orderWho(o) + ' → ' + LABELS[orderType(o)].status[next]);
+        }
+      }
+      if (del && confirm('Remove this order?')) Store.remove(del.dataset.remove);
+    });
+    document.getElementById('seedBtn').addEventListener('click', function () {
+      var before = {}; Store.all().forEach(function (o) { before[o.id] = true; });
+      var n = Demo.sampleActive();
+      Store.all().forEach(function (o) { known[o.id] = true; });
+      toast(n + ' sample orders added');
+      render();
+    });
+    document.getElementById('clearBtn').addEventListener('click', function () {
+      if (confirm('Delete all orders (demo reset)?')) { Store.clear(); toast('All orders cleared'); }
+    });
+
+    function uniq(list) { return list.filter(function (v, i) { return list.indexOf(v) === i; }); }
+    function sum(list) { return list.reduce(function (t, o) { return t + orderTotal(o); }, 0); }
+
+    function card(o) {
+      var bulk = orderType(o) === 'bulk', c = o.customer || {}, nl = nextLabel(o);
+      var bill = o.billRequested && o.status !== 'paid';
+      var cls = 'card order' + (o.status === 'new' ? ' is-new' : '') + (bill ? ' is-bill' : '') + (o.status === 'paid' ? ' is-paid' : '');
+      return '<div class="' + cls + '">' +
+        '<div class="head"><div><div class="who">' + (bulk ? '🍱 ' : '') + esc(orderWho(o)) + '</div>' +
+        '<div class="meta">#' + o.number + ' · ' + (bulk ? 'Bulk' : 'Table order') + ' · ' + fmtTime(o.createdAt) + ' · ' + timeAgo(o.createdAt) + '</div></div>' +
+        '<div class="badges"><span class="badge ' + o.status + '">' + statusLabel(o) + '</span>' + (bill ? '<span class="badge bill">💳 Bill</span>' : '') + '</div></div>' +
+        (bulk ? '<div class="info"><span>' + (c.method === 'delivery' ? '🛵 Delivery' : '🏪 Pickup') + ' · <b>' + fmtDate(c.date) + ' · ' + esc(c.time) + '</b></span>' +
+                '<span>📞 ' + esc(c.phone) + '</span>' + (c.address ? '<span>📍 ' + esc(c.address) + '</span>' : '') + '</div>' : '') +
+        itemLines(o) +
+        (o.note ? '<div class="note">📝 ' + esc(o.note) + '</div>' : '') +
+        sumLines(o) +
+        '<div class="actions">' +
+          (nl ? '<button class="btn ' + (o.status === 'served' ? 'ok' : 'primary') + '" data-advance="' + o.id + '">' + nl + '</button>'
+              : '<span class="muted small" style="flex:1;align-self:center">Closed ✔</span>') +
+          '<button class="btn ghost" data-remove="' + o.id + '" title="Remove order">✕</button>' +
+        '</div></div>';
+    }
+
+    function render() {
+      var orders = Store.all();
+
+      /* new orders arriving from customer tabs */
+      var fresh = orders.filter(function (o) { return !known[o.id]; });
+      if (fresh.length) {
+        fresh.forEach(function (o) { known[o.id] = true; });
+        toast('🔔 New order: ' + fresh.map(orderWho).join(', '));
+        beep();
+      }
+
+      var unpaid = orders.filter(function (o) { return o.status !== 'paid'; });
+      var tableOpen = unpaid.filter(function (o) { return orderType(o) === 'table'; });
+      var bulkOpen = unpaid.filter(function (o) { return orderType(o) === 'bulk'; });
+      var billTables = uniq(tableOpen.filter(function (o) { return o.billRequested; }).map(function (o) { return o.table; })).sort(function (a, b) { return a - b; });
+      var newCount = orders.filter(function (o) { return o.status === 'new'; }).length;
+      var cookingCount = orders.filter(function (o) { return o.status === 'cooking'; }).length;
+      var tablesBusy = uniq(tableOpen.map(function (o) { return o.table; })).length;
+      document.title = (newCount ? '(' + newCount + ') ' : '') + 'Cashier · ' + R.name;
+
+      /* stats */
+      document.getElementById('stats').innerHTML =
+        '<div class="card stat' + (newCount ? ' hot' : '') + '"><div class="v">' + newCount + '</div><div class="l">New orders</div></div>' +
+        '<div class="card stat"><div class="v">' + cookingCount + '</div><div class="l">In the kitchen</div></div>' +
+        '<div class="card stat' + (billTables.length ? ' alert' : '') + '"><div class="v">' + billTables.length + '</div><div class="l">Bills requested' + (billTables.length ? ' · T' + billTables.join(', T') : '') + '</div></div>' +
+        '<div class="card stat"><div class="v">' + tablesBusy + ' <span class="muted" style="font-size:16px">/ ' + R.tables + '</span></div><div class="l">Tables occupied</div></div>' +
+        '<div class="card stat"><div class="v">' + bulkOpen.length + '</div><div class="l">Bulk orders open</div></div>' +
+        '<div class="card stat"><div class="v">' + rupiahShort(sum(unpaid)) + '</div><div class="l">Unpaid total</div></div>';
+
+      /* floor */
+      var floor = '';
+      for (var t = 1; t <= R.tables; t++) {
+        var mine = tableOpen.filter(function (o) { return o.table === t; });
+        var bill = mine.some(function (o) { return o.billRequested; });
+        floor += '<a class="card seat' + (bill ? ' bill' : mine.length ? ' busy' : '') + '" href="order.html?table=' + t + '" target="_blank">' +
+          '<b>T' + t + '</b><span class="s">' + (bill ? '💳 bill' : mine.length ? rupiahShort(sum(mine)) : 'free') + '</span></a>';
+      }
+      document.getElementById('floor').innerHTML = floor;
+
+      /* filter chips with counts */
+      var byType = typeF === 'all' ? orders : orders.filter(function (o) { return orderType(o) === typeF; });
+      var count = function (f) { return byType.filter(f).length; };
+      var chips = [
+        ['active', 'Active', count(function (o) { return o.status !== 'paid'; })],
+        ['new', 'New', count(function (o) { return o.status === 'new'; })],
+        ['cooking', typeF === 'bulk' ? 'Preparing' : 'Cooking', count(function (o) { return o.status === 'cooking'; })],
+        ['served', typeF === 'bulk' ? 'Ready' : 'Served', count(function (o) { return o.status === 'served'; })],
+        ['paid', 'Paid', count(function (o) { return o.status === 'paid'; })],
+        ['all', 'All', byType.length]
+      ];
+      document.getElementById('filters').innerHTML = chips.map(function (c) {
+        return '<button class="chip' + (c[0] === statusF ? ' active' : '') + '" data-f="' + c[0] + '">' + c[1] + '<span class="n">' + c[2] + '</span></button>';
+      }).join('');
+
+      /* order cards: bill requests first, then newest */
+      var list = byType.filter(function (o) {
+        if (statusF === 'all') return true;
+        if (statusF === 'active') return o.status !== 'paid';
+        return o.status === statusF;
+      }).sort(function (a, b) {
+        var ab = a.billRequested && a.status !== 'paid' ? 1 : 0, bb = b.billRequested && b.status !== 'paid' ? 1 : 0;
+        return bb - ab || b.createdAt - a.createdAt;
+      });
+      var box = document.getElementById('orders');
+      if (!list.length) {
+        box.innerHTML = '<div class="empty" style="grid-column:1/-1"><b>Nothing here</b>Place an order from <a href="index.html" target="_blank"><u>a table</u></a> or the <a href="bulk.html" target="_blank"><u>bento &amp; platters menu</u></a> in another tab, or click “+ Sample orders”.</div>';
+        return;
+      }
+      box.innerHTML = list.map(card).join('');
+    }
+
+    render();
+    Store.onChange(render);
+    setInterval(render, 30000);   // keeps the "x min ago" labels fresh
+  </script>
+</body>
+</html>
