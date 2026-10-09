@@ -1,5 +1,7 @@
 # Restaurant table ordering
 
+**Live:** https://restaurant-order.mdhika987.workers.dev/?table=1 (table 1; change the number for other tables)
+
 Guests scan a QR code on their table, pick dishes on their phone, enter their name and confirm.
 The order is written into **Loyverse** (the restaurant's POS) as a receipt, so the kitchen and the cashier
 see it where they already work. The menu itself comes from Loyverse too. There is no staff screen or
