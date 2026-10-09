@@ -1,0 +1,6 @@
+# Copy this file to .dev.vars (it is gitignored). Only the Worker reads it; the browser never sees it.
+# Back Office > Integrations > Access tokens
+LOYVERSE_TOKEN=paste-your-access-token-here
+
+# Optional: choose a store when the account has more than one (ids: see loyverse-explorer)
+# LOYVERSE_STORE_ID=

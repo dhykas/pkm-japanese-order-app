@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Japanese Ramen &amp; Sushi</title>
+  <link rel="stylesheet" href="assets/css/style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+  <header class="topbar" id="topbar"></header>
+
+  <main class="container">
+    <section class="hero">
+      <span class="pill brand">いらっしゃいませ · Welcome</span>
+      <h1 id="restoTitle"></h1>
+      <span class="jp" id="restoJp"></span>
+      <p class="lead" id="restoTag"></p>
+    </section>
+
+    <div class="grid entry">
+      <a class="card entry-card" href="#tables">
+        <div class="ico">🍜</div>
+        <div>
+          <h3>Order at your table</h3>
+          <p class="muted small">Scan the QR code on your table, pick your ramen and sushi, and the kitchen gets it instantly. Pay when you're done.</p>
+          <div class="cta">Choose a table ↓</div>
+        </div>
+      </a>
+      <a class="card entry-card" href="bulk.html">
+        <div class="ico">🍱</div>
+        <div>
+          <h3>Bento &amp; party platters</h3>
+          <p class="muted small">Bento boxes, sushi platters and party trays for offices and events. Order a day ahead and save up to 15% with bulk pricing.</p>
+          <div class="cta">See bento &amp; platters →</div>
+        </div>
+      </a>
+    </div>
+
+    <div class="section-title" id="tables">
+      <h2>Choose your table</h2>
+      <span class="muted small" id="floorHint"></span>
+    </div>
+    <div class="grid tables" id="tablesGrid"></div>
+
+    <div class="section-title"><h2>How the demo works</h2></div>
+    <div class="grid steps-how">
+      <div class="card"><div class="num">1</div><b>Customer orders</b><p class="muted small">Pick a table (or the bento menu), add items, place the order. The cart is kept per tab.</p></div>
+      <div class="card"><div class="num">2</div><b>Cashier sees it live</b><p class="muted small">Open the cashier screen in another tab. New orders pop in with a sound and move New → Cooking → Served.</p></div>
+      <div class="card"><div class="num">3</div><b>Pay and report</b><p class="muted small">The customer can request the bill. Once paid, the dashboard shows revenue, top items and busy hours.</p></div>
+    </div>
+
+    <p class="muted small" style="margin-top:28px">Staff screens: <a href="cashier.html"><b>Cashier</b></a> · <a href="dashboard.html"><b>Dashboard</b></a></p>
+  </main>
+
+  <script src="assets/js/menu.js"></script>
+  <script src="assets/js/app.js"></script>
+  <script>
+    var R = MENU_DATA.restaurant;
+    renderNav({ area: 'customer', active: 'home' });
+    document.getElementById('restoTitle').textContent = R.name;
+    document.getElementById('restoJp').textContent = R.jp || '';
+    document.getElementById('restoTag').textContent = R.tagline;
+    document.title = R.name;
+
+    function renderTables() {
+      var open = Store.all().filter(function (o) { return orderType(o) === 'table' && o.status !== 'paid'; });
+      var html = '';
+      for (var t = 1; t <= R.tables; t++) {
+        var mine = open.filter(function (o) { return o.table === t; });
+        var total = mine.reduce(function (s, o) { return s + orderTotal(o); }, 0);
+        html += '<a class="card table-btn' + (mine.length ? ' busy' : '') + '" href="order.html?table=' + t + '">' +
+          'Table ' + t + '<span>' + (mine.length ? mine.length + ' open · ' + rupiah(total) : 'Free') + '</span></a>';
+      }
+      document.getElementById('tablesGrid').innerHTML = html;
+      document.getElementById('floorHint').textContent = open.length ? open.length + ' open order(s) right now' : 'No open orders right now';
+    }
+    renderTables();
+    Store.onChange(renderTables);
+  </script>
+</body>
+</html>

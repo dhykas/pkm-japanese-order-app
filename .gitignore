@@ -3,3 +3,11 @@ Thumbs.db
 .vscode/
 .idea/
 node_modules/
+
+# Cloudflare Workers
+.wrangler/
+.dev.vars
+
+# Build output
+dist/
+.vite-dev.log

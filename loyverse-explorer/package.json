@@ -1,0 +1,13 @@
+{
+  "name": "loyverse-explorer",
+  "private": true,
+  "type": "module",
+  "description": "Read-only explorer for a Loyverse account: paste a token, see every resource the API returns.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.143.0"
+  }
+}

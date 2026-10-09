@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Loyverse Explorer</title>
+  <style>
+    :root { --bg:#f7f5f2; --card:#fff; --ink:#1c1b1f; --muted:#706e75; --line:#e6e3e0; --brand:#c8102e; --brand-2:#fbeef0; --ok:#15803d; --ok-2:#dcfce7; --danger:#b91c1c; --danger-2:#fee2e2; --link:#1e3a8a; --mono:ui-monospace,SFMono-Regular,Consolas,monospace; }
+    * { box-sizing:border-box; }
+    body { margin:0; font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; background:var(--bg); color:var(--ink); }
+    .wrap { max-width:1140px; margin:0 auto; padding:24px 16px 80px; }
+    h1 { font-size:22px; margin:0; }
+    h2 { font-size:17px; margin:0; }
+    p { margin:0; }
+    .muted { color:var(--muted); }
+    .small { font-size:13px; }
+    .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; margin-top:16px; }
+    .tokenbar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+    .tokenbar input[type=password], .tokenbar input[type=text], .tokenbar input[type=url] { flex:1 1 320px; padding:10px 12px; border:1px solid var(--line); border-radius:8px; font:inherit; font-family:var(--mono); font-size:13px; }
+    button { padding:10px 14px; border:1px solid var(--line); border-radius:8px; background:#fff; font:inherit; cursor:pointer; }
+    button.primary { background:var(--brand); border-color:var(--brand); color:#fff; font-weight:600; }
+    button:disabled { opacity:.6; cursor:default; }
+    label.chk { display:flex; align-items:center; gap:6px; font-size:13px; color:var(--muted); }
+    .head { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
+    .pill { display:inline-block; padding:2px 10px; border-radius:999px; font-size:12px; font-weight:600; background:var(--bg); color:var(--muted); }
+    .pill.ok { background:var(--ok-2); color:var(--ok); }
+    .pill.err { background:var(--danger-2); color:var(--danger); }
+    .pill.load { background:var(--brand-2); color:var(--brand); }
+    .err { color:var(--danger); margin-top:8px; font-size:13px; }
+    .warn { color:#b45309; }
+    .baserow { flex-basis:100%; display:flex; align-items:center; gap:8px; font-size:13px; color:var(--muted); }
+    .baserow input[type=url] { flex:1; padding:7px 10px; font-size:12px; }
+    .tbl { overflow:auto; margin-top:12px; max-height:520px; }
+    table { border-collapse:collapse; width:100%; font-size:13px; }
+    th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); vertical-align:top; white-space:nowrap; }
+    th { color:var(--muted); font-weight:600; font-size:12px; text-transform:uppercase; letter-spacing:.03em; position:sticky; top:0; background:#fff; }
+    td.w { white-space:normal; min-width:220px; }
+    .id { font-family:var(--mono); font-size:12px; cursor:copy; color:var(--link); }
+    .id:hover { text-decoration:underline; }
+    .thumb { width:36px; height:36px; object-fit:cover; border-radius:6px; background:var(--bg); display:inline-block; }
+    details { margin-top:10px; }
+    summary { cursor:pointer; color:var(--muted); font-size:13px; }
+    pre { background:#1c1b1f; color:#f4f4f5; padding:12px; border-radius:8px; overflow:auto; font-size:12px; max-height:420px; margin:8px 0 0; }
+    ul.plain { margin:2px 0 0; padding:0; list-style:none; }
+    ul.plain li { padding:1px 0; }
+    .kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:10px; margin-top:12px; }
+    .kpi { background:var(--bg); border-radius:8px; padding:10px 12px; }
+    .kpi b { display:block; font-size:20px; }
+    .kpi span { font-size:12px; color:var(--muted); }
+    .toast { position:fixed; left:50%; bottom:24px; transform:translateX(-50%); background:#1c1b1f; color:#fff; padding:8px 14px; border-radius:8px; font-size:13px; opacity:0; transition:opacity .2s; pointer-events:none; }
+    .toast.show { opacity:1; }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Loyverse Explorer</h1>
+  <p class="muted small">Read-only view of everything the API returns for one account. The token is sent only to this page's own Worker, which forwards GET requests to https://api.loyverse.com/v1.0/. Nothing is written.</p>
+
+  <form class="card tokenbar" id="form" autocomplete="off">
+    <input type="password" id="token" placeholder="Paste an access token from Back Office > Integrations > Access tokens" spellcheck="false" required>
+    <button type="button" id="toggle">Show</button>
+    <label class="chk"><input type="checkbox" id="remember"> Remember in this tab</label>
+    <button type="submit" class="primary" id="load">Load data</button>
+    <label class="baserow">Worker URL <input type="url" id="base" spellcheck="false" placeholder="http://localhost:8787"> <span class="small">leave empty when this page is opened from the Worker itself</span></label>
+  </form>
+  <p class="muted small" id="status" style="margin-top:8px"></p>
+
+  <div id="summary"></div>
+  <div id="sections"></div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+(() => {
+  /* What to load, in order. Stores and categories come before items so names can be looked up. */
+  const RESOURCES = [
+    { key: 'merchant',      title: 'Merchant', single: true },
+    { key: 'stores',        title: 'Stores', cols: ['id', 'name', 'address', 'city', 'phone_number', 'created_at'] },
+    { key: 'categories',    title: 'Categories', cols: ['id', 'name', 'color', 'created_at', 'deleted_at'] },
+    { key: 'items',         title: 'Items (menu)', all: true, render: renderItems },
+    { key: 'modifiers',     title: 'Modifiers', all: true, render: renderModifiers },
+    { key: 'discounts',     title: 'Discounts', cols: ['id', 'name', 'type', 'discount_amount', 'discount_percent', 'restricted_access'] },
+    { key: 'taxes',         title: 'Taxes', cols: ['id', 'name', 'rate', 'type'] },
+    { key: 'payment_types', title: 'Payment types', cols: ['id', 'name', 'type', 'stores'] },
+    { key: 'pos_devices',   title: 'POS devices', cols: ['id', 'name', 'store_id', 'activated', 'deleted_at'] },
+    { key: 'employees',     title: 'Employees', cols: ['id', 'name', 'email', 'phone_number', 'is_owner', 'stores'] },
+    { key: 'customers',     title: 'Customers (first 250)', cols: ['id', 'name', 'email', 'phone_number', 'total_visits', 'total_spent', 'created_at'] },
+    { key: 'receipts',      title: 'Receipts (latest 20)', params: { limit: 20 }, render: renderReceipts },
+    { key: 'inventory',     title: 'Inventory levels (first 250)', cols: ['variant_id', 'store_id', 'in_stock', 'updated_at'] },
+    { key: 'shifts',        title: 'Shifts (latest 10)', params: { limit: 10 }, cols: ['id', 'store_id', 'pos_device_id', 'opened_at', 'closed_at', 'starting_cash', 'expected_cash', 'actual_cash'] },
+    { key: 'webhooks',      title: 'Webhooks', cols: ['id', 'type', 'url', 'status', 'created_at'] }
+  ];
+  const ITEM_COLORS = { GREY: '#9ca3af', RED: '#ef4444', PINK: '#ec4899', ORANGE: '#f97316', YELLOW: '#eab308', GREEN: '#22c55e', BLUE: '#3b82f6', PURPLE: '#a855f7' };
+
+  let state = {};
+  const $ = (id) => document.getElementById(id);
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  /* Where the Worker lives. Same origin when opened via "npm run dev"; otherwise (Live Server, file://) the field decides. */
+  const DEFAULT_BASE = /^https?:$/.test(location.protocol) ? location.origin : 'http://localhost:8787';
+  const base = () => { let b = $('base').value.trim() || DEFAULT_BASE; while (b.endsWith('/')) b = b.slice(0, -1); return b; };
+  const NOT_WORKER = () => 'No Worker at ' + base() + '. This page is being served by a plain static server (Live Server on port 5500, or a file:// URL), and those have no /api route. ' +
+    'Run "npm run dev" inside loyverse-explorer and open http://localhost:8787, or type http://localhost:8787 into the Worker URL field.';
+
+  /* ---------- API through the Worker ---------- */
+  async function api(path, params, token) {
+    const qs = new URLSearchParams(params || {}).toString();
+    const url = base() + '/api/' + path + (qs ? '?' + qs : '');
+    for (let attempt = 0; attempt < 3; attempt++) {
+      let res;
+      try { res = await fetch(url, { headers: { 'X-Loyverse-Token': token } }); }
+      catch (e) { throw new Error('Cannot reach ' + base() + '. Is "npm run dev" running in loyverse-explorer?'); }
+      if (res.status === 404 && !/json/i.test(res.headers.get('content-type') || '')) throw new Error(NOT_WORKER());
+      if (res.status === 429) { setStatus('Rate limited, waiting…'); await sleep(2500 * (attempt + 1)); continue; }
+      const text = await res.text();
+      let data;
+      try { data = JSON.parse(text); } catch (e) { data = { raw: text }; }
+      if (!res.ok) {
+        const msg = (data.errors || []).map((e) => e.code + ': ' + e.details).join('; ') || (res.status + ' ' + res.statusText);
+        throw new Error(msg);
+      }
+      return data;
+    }
+    throw new Error('Rate limited three times in a row. Wait a minute and try again.');
+  }
+  function firstList(data) {
+    const k = Object.keys(data).find((key) => Array.isArray(data[key]));
+    return k ? data[k] : [];
+  }
+  async function fetchPage(path, params, token) {
+    return firstList(await api(path, Object.assign({ limit: 250 }, params || {}), token));
+  }
+  async function fetchAll(path, params, token, maxPages = 20) {
+    let out = [], cursor = null, pages = 0;
+    do {
+      const q = Object.assign({ limit: 250 }, params || {});
+      if (cursor) q.cursor = cursor;
+      const data = await api(path, q, token);
+      out = out.concat(firstList(data));
+      cursor = data.cursor || null;
+      pages++;
+    } while (cursor && pages < maxPages);
+    return out;
+  }
+
+  /* ---------- Loading ---------- */
+  async function loadAll(token) {
+    $('load').disabled = true;
+    state = {};
+    $('summary').innerHTML = '';
+    $('sections').innerHTML = RESOURCES.map(sectionShell).join('');
+    for (const r of RESOURCES) {
+      setStatus('Loading ' + r.title + '…');
+      try {
+        const data = r.single ? await api(r.key, null, token)
+                   : r.all    ? await fetchAll(r.key, r.params, token)
+                   :            await fetchPage(r.key, r.params, token);
+        state[r.key] = data;
+        renderSection(r, data);
+      } catch (e) {
+        renderError(r, e.message);
+        if (r.key === 'merchant') {
+          setStatus('Stopped: ' + e.message + (/UNAUTHORIZED/.test(e.message) ? ' Check the token.' : ''));
+          $('load').disabled = false;
+          return;
+        }
+      }
+    }
+    renderSummary();
+    setStatus('Done. Click any blue id to copy it.');
+    $('load').disabled = false;
+  }
+  function setStatus(msg) { $('status').textContent = msg; }
+
+  /* ---------- Rendering ---------- */
+  function sectionShell(r) {
+    return '<section class="card" id="sec-' + r.key + '"><div class="head"><h2>' + esc(r.title) + '</h2><span class="pill load">loading</span></div><div class="body"></div></section>';
+  }
+  function renderSection(r, data) {
+    const sec = $('sec-' + r.key), pill = sec.querySelector('.pill');
+    const list = Array.isArray(data) ? data : null;
+    pill.className = 'pill ok';
+    pill.textContent = list ? list.length + (list.length === 1 ? ' record' : ' records') : 'ok';
+    let html;
+    if (list && !list.length) html = '<p class="muted small" style="margin-top:10px">Nothing here yet.</p>';
+    else if (r.render) html = r.render(list || data);
+    else html = list ? table(list, r.cols) : kv(data);
+    sec.querySelector('.body').innerHTML = html + '<details><summary>Raw JSON</summary><pre>' + esc(JSON.stringify(data, null, 2)) + '</pre></details>';
+  }
+  function renderError(r, msg) {
+    const sec = $('sec-' + r.key), pill = sec.querySelector('.pill');
+    pill.className = 'pill err'; pill.textContent = 'error';
+    sec.querySelector('.body').innerHTML = '<p class="err">' + esc(msg) + '</p>';
+  }
+  function renderSummary() {
+    const m = state.merchant || {}, stores = state.stores || [], pts = state.payment_types || [];
+    const items = state.items || [], cats = (state.categories || []).filter((c) => !c.deleted_at);
+    const variants = items.reduce((n, it) => n + (it.variants || []).length, 0);
+    const cfg = {
+      store_id: stores.length ? stores[0].id : null,
+      currency: m.currency || null,
+      payment_types: pts.reduce((o, p) => { o[p.name] = p.id; return o; }, {}),
+      categories: cats.reduce((o, c) => { o[c.name] = c.id; return o; }, {})
+    };
+    $('summary').innerHTML =
+      '<section class="card"><div class="head"><h2>' + esc(m.business_name || 'Account') + '</h2><span class="pill">' + esc([m.country, m.currency].filter(Boolean).join(' · ')) + '</span></div>' +
+      '<div class="kpis">' + kpi(stores.length, 'stores') + kpi(cats.length, 'categories') + kpi(items.length, 'items') + kpi(variants, 'variants') +
+        kpi(pts.length, 'payment types') + kpi((state.modifiers || []).length, 'modifiers') + kpi((state.webhooks || []).length, 'webhooks') + '</div>' +
+      '<details open><summary>Config values the Worker will need</summary><pre>' + esc(JSON.stringify(cfg, null, 2)) + '</pre></details></section>';
+  }
+  const kpi = (v, l) => '<div class="kpi"><b>' + esc(v) + '</b><span>' + esc(l) + '</span></div>';
+
+  /* Generic table: given columns, or every key seen in the first rows. */
+  function table(list, cols) {
+    if (!cols) {
+      const seen = new Set();
+      list.slice(0, 30).forEach((row) => Object.keys(row).forEach((k) => seen.add(k)));
+      cols = [...seen];
+    }
+    const head = cols.map((c) => '<th>' + esc(c) + '</th>').join('');
+    const rows = list.map((row) => '<tr>' + cols.map((c) => '<td' + (typeof row[c] === 'string' && row[c].length > 40 ? ' class="w"' : '') + '>' + cell(c, row[c]) + '</td>').join('') + '</tr>').join('');
+    return '<div class="tbl"><table><thead><tr>' + head + '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+  }
+  function kv(obj) {
+    const rows = Object.keys(obj).map((k) => '<tr><th>' + esc(k) + '</th><td class="w">' + cell(k, obj[k]) + '</td></tr>').join('');
+    return '<div class="tbl"><table><tbody>' + rows + '</tbody></table></div>';
+  }
+  function cell(key, v) {
+    if (v == null || v === '') return '<span class="muted">—</span>';
+    if (/(^|_)id$/.test(key) && typeof v === 'string') return idSpan(v);
+    if (/_at$/.test(key) && typeof v === 'string') return esc(fmtDate(v));
+    if (key === 'image_url') return '<img class="thumb" src="' + esc(v) + '" alt="">';
+    if (typeof v === 'boolean') return v ? 'yes' : 'no';
+    if (typeof v === 'number') return esc(v.toLocaleString());
+    if (Array.isArray(v)) {
+      if (!v.length) return '<span class="muted">—</span>';
+      if (typeof v[0] === 'string') return v.map((s) => /^[0-9a-f-]{36}$/.test(s) ? idSpan(s) : esc(s)).join(', ');
+      return '<span class="muted">' + v.length + ' entries</span>';
+    }
+    if (typeof v === 'object') return '<span class="muted small">' + esc(JSON.stringify(v)) + '</span>';
+    return esc(v);
+  }
+
+  function renderItems(items) {
+    const cats = {};
+    (state.categories || []).forEach((c) => { cats[c.id] = c.name; });
+    const rows = items.map((it) => {
+      const vs = (it.variants || []).map((v) => {
+        const opt = [v.option1_value, v.option2_value, v.option3_value].filter(Boolean).join(' / ');
+        const perStore = (v.stores || []).map((s) => (s.pricing_type === 'VARIABLE' ? 'variable' : money(s.price)) + (s.available_for_sale === false ? ' (hidden)' : ''));
+        return '<li>' + idSpan(v.variant_id) + (opt ? ' <b>' + esc(opt) + '</b>' : '') + (v.sku ? ' <span class="muted">SKU ' + esc(v.sku) + '</span>' : '') +
+          ' · ' + (v.default_pricing_type === 'VARIABLE' ? 'variable price' : money(v.default_price)) +
+          (perStore.length > 1 ? ' <span class="muted small">(per store: ' + esc(perStore.join(', ')) + ')</span>' : '') + '</li>';
+      }).join('');
+      const thumb = it.image_url ? '<img class="thumb" src="' + esc(it.image_url) + '" alt="">' : '<span class="thumb" style="background:' + (ITEM_COLORS[it.color] || '#e5e7eb') + '"></span>';
+      return '<tr><td>' + thumb + '</td>' +
+        '<td class="w"><b>' + esc(it.item_name) + '</b><br>' + idSpan(it.id) + '</td>' +
+        '<td>' + esc(cats[it.category_id] || (it.category_id ? it.category_id : '—')) + '</td>' +
+        '<td class="w"><ul class="plain">' + vs + '</ul></td>' +
+        '<td>' + (it.track_stock ? 'yes' : 'no') + '</td>' +
+        '<td>' + ((it.modifier_ids || []).length || '—') + '</td>' +
+        '<td>' + ((it.tax_ids || []).length || '—') + '</td></tr>';
+    }).join('');
+    return '<div class="tbl"><table><thead><tr><th></th><th>Item</th><th>Category</th><th>Variants · variant_id · price</th><th>Stock</th><th>Modifiers</th><th>Taxes</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+  }
+  function renderModifiers(mods) {
+    const rows = mods.map((m) => '<tr><td class="w"><b>' + esc(m.name) + '</b><br>' + idSpan(m.id) + '</td>' +
+      '<td class="w"><ul class="plain">' + (m.modifier_options || []).map((o) => '<li>' + idSpan(o.id) + ' ' + esc(o.name) + ' · ' + money(o.price) + '</li>').join('') + '</ul></td>' +
+      '<td>' + cell('stores', m.stores) + '</td></tr>').join('');
+    return '<div class="tbl"><table><thead><tr><th>Modifier</th><th>Options</th><th>Stores</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+  }
+  function renderReceipts(list) {
+    const stores = {}, pts = {};
+    (state.stores || []).forEach((s) => { stores[s.id] = s.name; });
+    (state.payment_types || []).forEach((p) => { pts[p.id] = p.name; });
+    const rows = list.map((r) => '<tr><td>' + esc(r.receipt_number) + '<br><span class="muted small">' + esc(r.receipt_type || '') + '</span></td>' +
+      '<td>' + esc(fmtDate(r.created_at)) + '</td>' +
+      '<td>' + esc(stores[r.store_id] || r.store_id || '—') + '</td>' +
+      '<td class="w">' + (r.line_items || []).map((li) => esc((li.quantity == null ? '' : li.quantity + '× ') + li.item_name + (li.variant_name ? ' (' + li.variant_name + ')' : ''))).join('<br>') + '</td>' +
+      '<td class="w">' + (r.payments || []).map((p) => esc((p.name || pts[p.payment_type_id] || p.type || 'payment') + ' ' + money(p.money_amount))).join('<br>') + '</td>' +
+      '<td><b>' + money(r.total_money) + '</b></td>' +
+      '<td class="w"><span class="muted small">' + esc([r.order && 'order ' + r.order, r.source, r.dining_option, r.note].filter(Boolean).join(' · ') || '—') + '</span></td></tr>').join('');
+    return '<div class="tbl"><table><thead><tr><th>Receipt</th><th>Created</th><th>Store</th><th>Lines</th><th>Payments</th><th>Total</th><th>Order · source · note</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+  }
+
+  /* ---------- Formatting ---------- */
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+  const idSpan = (id) => '<span class="id" title="Click to copy">' + esc(id) + '</span>';
+  function money(n) {
+    if (n == null) return '—';
+    const cur = state.merchant && state.merchant.currency;
+    try { if (cur) return new Intl.NumberFormat(undefined, { style: 'currency', currency: cur, maximumFractionDigits: 2 }).format(n); } catch (e) { /* unknown currency code */ }
+    return Number(n).toLocaleString();
+  }
+  function fmtDate(iso) {
+    const d = new Date(iso);
+    return isNaN(d) ? iso : d.toLocaleString();
+  }
+
+  /* ---------- Copy ids, toast ---------- */
+  let toastTimer;
+  function toast(msg) {
+    const el = $('toast');
+    el.textContent = msg; el.classList.add('show');
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('show'), 1600);
+  }
+  document.addEventListener('click', (e) => {
+    const id = e.target.closest('.id');
+    if (!id) return;
+    const text = id.textContent;
+    if (navigator.clipboard) navigator.clipboard.writeText(text).then(() => toast('Copied ' + text), () => toast('Copy failed'));
+    else toast('Select and copy: ' + text);
+  });
+
+  /* ---------- Worker detection on load ---------- */
+  try { $('base').value = localStorage.getItem('lv_base') || ''; } catch (e) { /* storage blocked */ }
+  async function detectWorker() {
+    const st = $('status');
+    try {
+      const res = await fetch(base() + '/api/merchant');
+      if (/json/i.test(res.headers.get('content-type') || '')) { st.className = 'muted small'; st.textContent = 'Worker found at ' + base() + '. Paste a token and press Load data.'; return; }
+    } catch (e) { /* unreachable, fall through */ }
+    st.className = 'small warn';
+    st.textContent = NOT_WORKER();
+  }
+  detectWorker();
+  $('base').addEventListener('change', () => { try { localStorage.setItem('lv_base', $('base').value.trim()); } catch (e) { /* ignore */ } detectWorker(); });
+
+  /* ---------- Token field ---------- */
+  let saved = null;
+  try { saved = sessionStorage.getItem('lv_token'); } catch (e) { /* storage blocked */ }
+  if (saved) { $('token').value = saved; $('remember').checked = true; }
+  $('toggle').addEventListener('click', function () {
+    const t = $('token');
+    t.type = t.type === 'password' ? 'text' : 'password';
+    this.textContent = t.type === 'password' ? 'Show' : 'Hide';
+  });
+  $('form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const token = $('token').value.trim();
+    if (!token) return;
+    try { if ($('remember').checked) sessionStorage.setItem('lv_token', token); else sessionStorage.removeItem('lv_token'); } catch (err) { /* ignore */ }
+    loadAll(token);
+  });
+})();
+</script>
+</body>
+</html>

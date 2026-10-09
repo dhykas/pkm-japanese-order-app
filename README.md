@@ -1,88 +1,90 @@
-# PKM Japanese Order App 🍜🍣
+# Restaurant table ordering
 
-Aplikasi demo pemesanan makanan untuk restoran Jepang (ramen & sushi). Pelanggan memesan langsung dari meja lewat ponsel, kasir memantau pesanan secara real-time, dan pemilik melihat laporan penjualan di dashboard.
+Guests scan a QR code on their table, pick dishes on their phone, enter their name and confirm.
+The order is written into **Loyverse** (the restaurant's POS) as a receipt, so the kitchen and the cashier
+see it where they already work. The menu itself comes from Loyverse too. There is no staff screen or
+dashboard in this app on purpose: Loyverse is the back office.
 
-Dibuat dengan **HTML + CSS + JavaScript murni**: tanpa server, tanpa build step, tanpa framework. Cukup buka `index.html` di browser.
-
-## Fitur
-
-| Halaman | Pengguna | Fungsi |
-|---|---|---|
-| `index.html` | Pelanggan | Halaman utama: pilih meja atau menu bento & platter. Meja yang sedang terisi ditandai. |
-| `order.html?table=N` | Pelanggan di meja N | Menu ramen, sushi, side dish, minuman dan dessert dengan pencarian & kategori, keranjang, catatan untuk dapur, status pesanan live, dan tombol **Minta bill**. |
-| `bulk.html` | Pelanggan pesan di muka | Menu bento & party platter dengan minimal pembelian, **diskon bertingkat** (5 / 10 / 15 %), pilihan ambil sendiri atau diantar, serta tanggal & jam. |
-| `cashier.html` | Kasir | Papan pesanan live: statistik, denah meja dengan permintaan bill, filter tipe (meja / bulk) dan status, ubah status sekali klik. |
-| `dashboard.html` | Pemilik / staf | KPI pendapatan, pendapatan per jam, menu terlaris, pesanan per status, pendapatan per meja, pesanan terbaru. Tombol **Generate demo day** untuk mengisi data contoh. |
-
-## Cara menjalankan
-
-1. Clone repository:
-   ```bash
-   git clone https://github.com/dhykas/pkm-japanese-order-app.git
-   cd pkm-japanese-order-app
-   ```
-2. Buka `index.html` di browser (klik dua kali sudah cukup).
-   Opsional, jalankan server lokal: `npx serve .` atau `python -m http.server`.
-
-## Alur demo
-
-1. Buka `index.html`, pilih meja, tambahkan ramen dan sushi, lalu tekan **Place order**.
-2. Buka `cashier.html` di tab lain. Pesanan langsung muncul. Tekan **Start cooking → Mark served → Mark paid**; tab pelanggan ikut ter-update.
-3. Di tab pelanggan tekan **Request bill**; denah meja di kasir berubah warna untuk meja tersebut.
-4. Buka `bulk.html`, tambahkan 10+ bento, lihat progress diskon, isi nama / telepon / tanggal lalu **Send bulk order**. Pesanan muncul di kasir pada filter **Bulk** (New → Preparing → Ready → Paid).
-5. Buka `dashboard.html` dan tekan **Generate demo day** untuk melihat grafik satu hari penuh.
-
-## Struktur folder
+The whole thing is **one Cloudflare Worker**: a React UI served as static assets plus a small Hono API.
+It fits the Cloudflare free plan.
 
 ```
 .
-├── index.html          # Halaman utama pelanggan
-├── order.html          # Pemesanan dari meja
-├── bulk.html           # Pemesanan bento & platter (bulk)
-├── cashier.html        # Layar kasir
-├── dashboard.html      # Dashboard laporan
-└── assets/
-    ├── css/
-    │   └── style.css   # Design system: token tema, komponen, responsive
-    └── js/
-        ├── app.js      # Storage (Store), helper pesanan, navbar, toast, data demo
-        └── menu.js     # Data menu (dummy)
+├── index.html            Vite entry for the React app
+├── src/                  React UI (order page, cart, name + confirmation, sent orders)
+├── worker/               Hono API: menu from Loyverse, orders → Loyverse receipts
+├── shared/types.ts       Types used by both sides
+├── scripts/loyverse-import-items.csv   Sample menu in Loyverse's import format (for a dev account)
+├── wrangler.jsonc        Worker config and non-secret vars
+├── demo/                 The original static HTML demo (open demo/index.html)
+└── loyverse-explorer/    Dev tool: paste a token, see everything the Loyverse API returns
 ```
 
-## Penyimpanan data
+## Run locally
 
-- **Menu** ada di `assets/js/menu.js`: `items` untuk menu meja, `bulk.items` untuk menu bento & platter, `bulk.tiers` untuk tingkatan diskon. Data berbentuk JSON yang dibungkus variabel JavaScript, karena browser memblokir `fetch()` file `.json` lokal saat halaman dibuka langsung dari disk.
-- **Pesanan** disimpan di `localStorage` dengan satu key, sehingga tab pelanggan, kasir dan dashboard berbagi "database" yang sama selama berada di browser yang sama. Perubahan disebarkan lewat event `storage` dengan polling ringan sebagai cadangan.
-- **Keranjang** (belum dipesan) disimpan di `sessionStorage`, hanya berlaku di tab tersebut.
-
-Contoh struktur pesanan:
-
-```json
-{
-  "id": "ord_abc123",
-  "number": 12,
-  "type": "bulk",
-  "status": "new",
-  "customer": { "name": "PT Maju Jaya", "phone": "021 555 0199", "method": "delivery", "date": "2026-09-24", "time": "11:00", "address": "Jl. Pajajaran No. 7" },
-  "items": [{ "id": "b1", "name": "Chicken Teriyaki Bento", "price": 55000, "qty": 30 }],
-  "note": "Office lunch",
-  "subtotal": 1650000,
-  "discountPct": 10,
-  "discount": 165000,
-  "total": 1485000,
-  "billRequested": false,
-  "createdAt": 1758600000000,
-  "updatedAt": 1758600000000
-}
+```bash
+npm install
+cp .dev.vars.example .dev.vars     # then paste your Loyverse access token into it
+npm run dev
 ```
 
-Pesanan meja memakai `"type": "table"` dan `"table": 5` sebagai ganti `customer`. Alur status: `new → cooking → served → paid`.
+Open http://localhost:5173. Table pages are `/?table=3` and so on; that is what the QR codes point to.
+Until `.dev.vars` holds a real token the app shows a setup screen instead of a menu.
 
-## Pengembangan lanjutan
+## How an order flows
 
-Untuk menjadikannya aplikasi nyata, ganti objek `Store` di `assets/js/app.js` dengan pemanggilan ke backend (REST atau WebSocket). Halaman lain tidak bergantung langsung pada `localStorage`.
+1. The page loads `/api/menu`. The Worker pulls categories, items and store prices from Loyverse and
+   caches them for five minutes. Only items with a **fixed price** that are **available for sale** in the
+   store are shown; variable-price items cannot be self-ordered.
+2. The guest builds a cart. Lines are kept in menu order, which is category order, then name.
+3. Before confirming, the guest enters a **name**. Loyverse does not require one, but the cashier needs
+   a way to match the guest to the receipt.
+4. `POST /api/orders` re-prices every line from the menu snapshot (the browser only sends ids and
+   quantities) and creates a Loyverse receipt: store from the account, payment type from
+   `LOYVERSE_PAYMENT_TYPE`, note `Table 5 · Name · kitchen note`, order reference like `T5-K3F9Q`.
+5. The guest sees the receipt number, and the order is listed under "Your orders" on that phone.
 
-## Teknologi
+Loyverse's public API cannot create open tickets, so the receipt is final at order time and carries one
+payment type. Create a payment type such as **"Pay at cashier"** in Back Office > Settings > Payment
+types and set `LOYVERSE_PAYMENT_TYPE` to it, so these sales are easy to tell apart in reports. Do not
+ring the order up a second time at the till; the guest pays and the receipt already exists.
 
-- HTML5, CSS3, JavaScript (vanilla)
-- Font [Noto Sans JP](https://fonts.google.com/noto/specimen/Noto+Sans+JP) dari Google Fonts
+## Configuration
+
+| Where | Name | Meaning |
+|---|---|---|
+| `.dev.vars` / `wrangler secret` | `LOYVERSE_TOKEN` | Back Office > Integrations > Access tokens. Never reaches the browser. |
+| `.dev.vars` / `wrangler secret` | `LOYVERSE_STORE_ID` | Optional. Which store to sell from when the account has several. |
+| `wrangler.jsonc` vars | `LOYVERSE_PAYMENT_TYPE` | Name of the payment type written on receipts (default `Cash`). |
+| `wrangler.jsonc` vars | `CATEGORY_ORDER` | Optional, e.g. `Ramen, Sushi, Sides, Drinks, Dessert`. Named categories come first in that order; the rest follow by creation time. |
+| `wrangler.jsonc` vars | `TABLE_COUNT` | Number of tables (default 8). |
+| `wrangler.jsonc` vars | `RESTAURANT_NAME` | Overrides the business name from Loyverse. |
+
+## API
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/menu` | Categories and products from Loyverse (cached 5 min, `?refresh=1` re-pulls) |
+| POST | `/api/orders` | Place an order. Body `{ table, customerName, items: [{ id, qty }], note, clientOrderId }`. Returns the Loyverse receipt number. |
+
+## Filling a dev Loyverse account
+
+A fresh account has no categories or priced items, and the app shows a "No products to show yet" screen.
+`scripts/loyverse-import-items.csv` holds a sample menu (5 categories, 23 items with fixed prices) in
+Loyverse's own item export layout. Upload it in Back Office > Items > Item list > Import. Categories
+named in the file are created during the import. The store columns are named for a store called
+`test`; rename them if your store is called something else.
+
+## Deploy
+
+```bash
+npx wrangler login
+npx wrangler secret put LOYVERSE_TOKEN
+npm run deploy
+```
+
+## Dev tools
+
+- `loyverse-explorer/`: paste a token and browse every resource the API returns, with the ids the
+  Worker needs.
+- `demo/`: the original static HTML prototype this app was ported from.

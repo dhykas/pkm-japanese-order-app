@@ -1,0 +1,14 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "restaurant-order",
+  "main": "worker/index.ts",
+  "compatibility_date": "2025-09-01",
+  "assets": { "binding": "ASSETS", "not_found_handling": "single-page-application" },
+  "observability": { "enabled": true },
+  "vars": {
+    "TABLE_COUNT": "8",
+    "RESTAURANT_NAME": "",
+    "LOYVERSE_PAYMENT_TYPE": "Cash",
+    "CATEGORY_ORDER": "Ramen, Sushi, Sides, Drinks, Dessert"
+  }
+}
