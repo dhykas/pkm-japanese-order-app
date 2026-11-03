@@ -10,16 +10,14 @@ export function configureMoney(currency: string, locale: string, decimals: numbe
 }
 export const money = (n: number) => (fmt ? fmt.format(n) : String(n));
 
-export const fmtTime = (ts: number) => new Date(ts).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+export const fmtTime = (ts: number) => new Date(ts).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
 
 export function timeAgo(ts: number) {
   const s = Math.max(0, Math.round((Date.now() - ts) / 1000));
-  if (s < 60) return 'just now';
+  if (s < 60) return 'baru saja';
   const m = Math.round(s / 60);
-  if (m < 60) return `${m} min ago`;
+  if (m < 60) return `${m} menit lalu`;
   const h = Math.round(m / 60);
-  if (h < 24) return `${h} h ago`;
-  return `${Math.round(h / 24)} d ago`;
+  if (h < 24) return `${h} jam lalu`;
+  return `${Math.round(h / 24)} hari lalu`;
 }
-
-export const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;

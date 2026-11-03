@@ -2,12 +2,12 @@
   "name": "restaurant-order",
   "private": true,
   "type": "module",
-  "description": "Per-table QR ordering: React UI + Hono API in one Cloudflare Worker. Menu from Loyverse, orders become Loyverse receipts.",
+  "description": "Per-table QR ordering: React UI on Vercel + Hono API as a Vercel Function. Menu from Loyverse, orders become Loyverse receipts.",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "deploy": "vite build && wrangler deploy",
+    "deploy": "vercel deploy --prod",
     "typecheck": "tsc -p tsconfig.app.json && tsc -p tsconfig.worker.json",
     "cf-typegen": "wrangler types"
   },

@@ -5,6 +5,7 @@ import { configureMoney } from './format';
 import { TopBar } from './components/TopBar';
 import { TablePicker } from './components/TablePicker';
 import { OrderPage } from './components/OrderPage';
+import { DiscountPage } from './components/DiscountPage';
 
 /* The QR code on each table links to /?table=N. Without a valid table the picker is shown. */
 function tableFromUrl(): number | null {
@@ -39,7 +40,7 @@ export default function App() {
             <SetupCard />
           ) : (
             <div className="empty">
-              <b>The menu could not be loaded</b>
+              <b>Menu tidak dapat dimuat</b>
               {error.message}
             </div>
           )}
@@ -52,11 +53,13 @@ export default function App() {
       <>
         <TopBar name="…" />
         <main className="container">
-          <p className="muted">Loading menu…</p>
+          <p className="muted">Memuat menu…</p>
         </main>
       </>
     );
   }
+  /* /discount is the staff discount calculator; everything else is the guest ordering app. */
+  if (window.location.pathname.replace(/\/+$/, '') === '/discount') return <DiscountPage menu={menu} />;
   if (table && table <= menu.restaurant.tables) return <OrderPage menu={menu} table={table} />;
   return <TablePicker menu={menu} />;
 }
@@ -65,23 +68,23 @@ export default function App() {
 function SetupCard() {
   return (
     <div className="card pad" style={{ maxWidth: 640, margin: '24px auto' }}>
-      <span className="pill brand">Setup</span>
-      <h2 style={{ marginTop: 10 }}>Connect Loyverse</h2>
+      <span className="pill brand">Pengaturan</span>
+      <h2 style={{ marginTop: 10 }}>Hubungkan Loyverse</h2>
       <p className="muted" style={{ marginTop: 6 }}>
-        Categories and products come from your Loyverse account, and every order becomes a Loyverse receipt. The Worker needs an access
-        token first.
+        Kategori dan produk diambil dari akun Loyverse Anda, dan setiap pesanan menjadi struk Loyverse. Worker membutuhkan
+        token akses terlebih dahulu.
       </p>
       <ol style={{ margin: '16px 0 0', paddingLeft: 20, display: 'flex', flexDirection: 'column', gap: 8 }}>
         <li>
-          In Loyverse Back Office open <b>Integrations › Access tokens</b> and create a token.
+          Di Loyverse Back Office buka <b>Integrations › Access tokens</b> lalu buat token.
         </li>
         <li>
-          In the project folder open <b>.dev.vars</b> and paste it on the line <code>LOYVERSE_TOKEN=</code>
+          Di folder proyek buka <b>.dev.vars</b> lalu tempel token pada baris <code>LOYVERSE_TOKEN=</code>
         </li>
-        <li>Reload this page. The dev server picks the file up on its own.</li>
+        <li>Muat ulang halaman ini. Server dev membaca file itu dengan sendirinya.</li>
       </ol>
       <p className="muted small" style={{ marginTop: 16 }}>
-        Deployed Worker: <code>npx wrangler secret put LOYVERSE_TOKEN</code>.
+        Di Vercel: <code>npx vercel env add LOYVERSE_TOKEN production</code>, lalu deploy ulang.
       </p>
     </div>
   );

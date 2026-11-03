@@ -93,7 +93,18 @@ export interface LvItem {
   image_url?: string | null;
   color?: string | null;
   deleted_at?: string | null;
+  modifier_ids?: string[] | null;
   variants?: LvVariant[];
+}
+export interface LvModifierOption { id: string; name: string; price: number | null; position?: number; deleted_at?: string | null }
+export interface LvModifier {
+  id: string;
+  name: string;
+  position?: number;
+  /** Stores the modifier is available in. */
+  stores?: string[] | null;
+  deleted_at?: string | null;
+  modifier_options?: LvModifierOption[];
 }
 export interface LvReceipt {
   receipt_number: string;

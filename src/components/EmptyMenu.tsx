@@ -1,45 +1,37 @@
-import { useState } from 'react';
 import type { Menu } from '../../shared/types';
-import { api } from '../api';
 
 /* Shown when Loyverse answered but returned no product a guest could order. */
 export function EmptyMenu({ menu }: { menu: Menu }) {
-  const [checking, setChecking] = useState(false);
   const sk = menu.skipped;
   const reasons = [
-    sk.variablePrice && `${sk.variablePrice} with a variable price`,
-    sk.notForSale && `${sk.notForSale} not available for sale in this store`,
-    sk.noPrice && `${sk.noPrice} without a price`,
+    sk.variablePrice && `${sk.variablePrice} dengan harga variabel`,
+    sk.notForSale && `${sk.notForSale} tidak dijual di toko ini`,
+    sk.noPrice && `${sk.noPrice} tanpa harga`,
   ].filter(Boolean) as string[];
   const skippedTotal = sk.variablePrice + sk.notForSale + sk.noPrice;
 
-  const checkAgain = () => {
-    setChecking(true);
-    api.menu(true).finally(() => window.location.reload());
-  };
-
   return (
     <div className="card pad" style={{ marginTop: 8 }}>
-      <span className="pill live">Connected to Loyverse</span>
-      <h2 style={{ marginTop: 10 }}>No products to show yet</h2>
+      <span className="pill live">Terhubung ke Loyverse</span>
+      <h2 style={{ marginTop: 10 }}>Belum ada produk untuk ditampilkan</h2>
       <p className="muted" style={{ marginTop: 6 }}>
-        <b>{menu.restaurant.name}</b> has no item with a fixed price that is available for sale.
-        {skippedTotal > 0 && ` ${skippedTotal === 1 ? 'One item was' : `${skippedTotal} items were`} left out: ${reasons.join(', ')}.`}
+        <b>{menu.restaurant.name}</b> belum memiliki item dengan harga tetap yang tersedia untuk dijual.
+        {skippedTotal > 0 && ` ${skippedTotal === 1 ? 'Satu item' : `${skippedTotal} item`} tidak ditampilkan: ${reasons.join(', ')}.`}
       </p>
       <ol style={{ margin: '16px 0 0', paddingLeft: 20, display: 'flex', flexDirection: 'column', gap: 8 }}>
         <li>
-          In Loyverse Back Office open <b>Items › Categories</b> and add your categories.
+          Di Loyverse Back Office buka <b>Items › Categories</b> lalu tambahkan kategori Anda.
         </li>
         <li>
-          Open <b>Items › Item list</b> and add items with a <b>fixed price</b>, each in a category. Photos and descriptions show up here too.
+          Buka <b>Items › Item list</b> lalu tambahkan item dengan <b>harga tetap</b>, masing-masing dalam satu kategori. Foto dan deskripsi juga tampil di sini.
         </li>
-        <li>Come back and press the button below.</li>
+        <li>Tunggu hingga lima menit, lalu tekan tombol di bawah.</li>
       </ol>
       <div className="row wrap" style={{ marginTop: 16 }}>
-        <button type="button" className="btn primary" onClick={checkAgain} disabled={checking}>
-          {checking ? 'Checking…' : 'Check Loyverse again'}
+        <button type="button" className="btn primary" onClick={() => window.location.reload()}>
+          Muat ulang menu
         </button>
-        <span className="muted small">Otherwise the menu refreshes on its own every five minutes.</span>
+        <span className="muted small">Menu dibaca ulang dari Loyverse setiap lima menit.</span>
       </div>
     </div>
   );

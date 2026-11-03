@@ -23,6 +23,6 @@ async function req<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  menu: (refresh = false) => req<Menu>(refresh ? '/api/menu?refresh=1' : '/api/menu'),
+  menu: () => req<Menu>('/api/menu'),
   place: (input: NewOrderInput) => req<PlacedOrder>('/api/orders', { method: 'POST', body: JSON.stringify(input) }),
 };

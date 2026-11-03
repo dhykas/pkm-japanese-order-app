@@ -1,8 +1,9 @@
 import type { OrderLine } from '../../shared/types';
-import { money, plural } from '../format';
+import { optionsLabel } from '../../shared/options';
+import { money } from '../format';
 import { QtyControl } from './QtyControl';
 
-type Line = Pick<OrderLine, 'id' | 'name' | 'price' | 'qty'>;
+type Line = Pick<OrderLine, 'name' | 'price' | 'qty' | 'options'> & { key: string };
 
 /* Desktop: sticky side panel. Phone: bottom sheet opened from the black cart bar (CSS in styles.css). */
 export function Cart(props: {
@@ -11,7 +12,7 @@ export function Cart(props: {
   count: number;
   note: string;
   setNote: (s: string) => void;
-  setQty: (id: string, q: number) => void;
+  setQty: (key: string, q: number) => void;
   open: boolean;
   onOpen: () => void;
   onClose: () => void;
@@ -21,26 +22,27 @@ export function Cart(props: {
   const { lines, total, count, note, setNote, setQty, open, onOpen, onClose, onPlace, placing } = props;
   return (
     <>
-      <aside className={'card lift cart' + (open ? ' open' : '')} aria-label="Your cart">
+      <aside className={'card lift cart' + (open ? ' open' : '')} aria-label="Keranjang Anda">
         <div className="cart-head">
-          <h2>Your cart</h2>
-          <span className="pill">{plural(count, 'item')}</span>
+          <h2>Keranjang Anda</h2>
+          <span className="pill">{count} item</span>
         </div>
         <div className="cart-lines">
           {lines.length ? (
             lines.map((l) => (
-              <div className="line" key={l.id}>
+              <div className="line" key={l.key}>
                 <div>
                   <div className="n">{l.name}</div>
-                  <div className="sub">{money(l.price)} each</div>
+                  {l.options?.length ? <div className="opt">{optionsLabel(l.options)}</div> : null}
+                  <div className="sub">{money(l.price)} / item</div>
                 </div>
-                <QtyControl small qty={l.qty} onChange={(q) => setQty(l.id, q)} />
+                <QtyControl small qty={l.qty} onChange={(q) => setQty(l.key, q)} />
                 <span className="amt">{money(l.price * l.qty)}</span>
               </div>
             ))
           ) : (
             <div className="empty" style={{ padding: '22px 12px' }}>
-              <b>Your cart is empty</b>Add something tasty from the menu.
+              <b>Keranjang masih kosong</b>Pilih hidangan lezat dari menu.
             </div>
           )}
         </div>
@@ -54,21 +56,21 @@ export function Cart(props: {
           className="input"
           rows={2}
           maxLength={300}
-          placeholder="Note for the kitchen (no wasabi, extra noodles…)"
+          placeholder="Catatan untuk dapur (tanpa wasabi, tambah mi…)"
           value={note}
           onChange={(e) => setNote(e.target.value)}
         />
         <button type="button" className="btn primary lg block" disabled={!lines.length || placing} onClick={onPlace}>
-          Place order
+          Pesan sekarang
         </button>
         <button type="button" className="btn ghost block sm only-mobile" onClick={onClose}>
-          Close
+          Tutup
         </button>
       </aside>
       <div className={'backdrop' + (open ? ' show' : '')} onClick={onClose} />
       <button type="button" className="cart-bar" onClick={onOpen}>
-        <span>{count ? `${plural(count, 'item')} · ${money(total)}` : 'Cart empty'}</span>
-        <span>View cart ›</span>
+        <span>{count ? `${count} item · ${money(total)}` : 'Keranjang kosong'}</span>
+        <span>Lihat keranjang ›</span>
       </button>
     </>
   );

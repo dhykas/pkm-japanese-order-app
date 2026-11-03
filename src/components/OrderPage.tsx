@@ -1,15 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { Menu, OrderLine, PlacedOrder } from '../../shared/types';
+import type { Menu, MenuItem, OrderLine, PlacedOrder } from '../../shared/types';
+import { lineKey, parseLineKey, resolveOptions } from '../../shared/options';
 import { api } from '../api';
-import { fmtTime, money, plural } from '../format';
+import { fmtTime, money } from '../format';
 import { TopBar } from './TopBar';
 import { MenuGrid } from './MenuGrid';
 import { EmptyMenu } from './EmptyMenu';
 import { Cart } from './Cart';
 import { SentOrders, OrderLines } from './SentOrders';
 import { Modal } from './Modal';
+import { OptionPicker } from './OptionPicker';
 
+/* Keyed by lineKey: the item id, plus the chosen option ids for items with modifiers. */
 type CartState = Record<string, number>;
+type CartLine = OrderLine & { key: string };
 type ModalState = { kind: 'confirm' } | { kind: 'success'; order: PlacedOrder } | null;
 
 const NAME_KEY = 'guest_name';
@@ -35,10 +39,15 @@ export function OrderPage({ menu, table }: { menu: Menu; table: number }) {
   const cartKey = `cart_table_${table}`;
   const sentKey = `sent_table_${table}`;
   const [cart, setCart] = useState<CartState>(() => {
-    // drop anything that is no longer on the menu
+    // drop anything that is no longer on the menu, or whose options changed in Loyverse
     const saved = readJson<CartState>(cartKey, {});
+    const byId = new Map(menu.items.map((i) => [i.id, i]));
     const valid: CartState = {};
-    for (const i of menu.items) if (saved[i.id] > 0) valid[i.id] = saved[i.id];
+    for (const [key, qty] of Object.entries(saved)) {
+      const { id, options } = parseLineKey(key);
+      const item = byId.get(id);
+      if (item && qty > 0 && resolveOptions(item, options)) valid[key] = qty;
+    }
     return valid;
   });
   const [note, setNote] = useState('');
@@ -50,6 +59,7 @@ export function OrderPage({ menu, table }: { menu: Menu; table: number }) {
   const [sent, setSent] = useState<PlacedOrder[]>(() => readJson<PlacedOrder[]>(sentKey, []));
   const [modal, setModal] = useState<ModalState>(null);
   const [placing, setPlacing] = useState(false);
+  const [picking, setPicking] = useState<MenuItem | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<number | undefined>(undefined);
   const clientOrderId = useRef<string | null>(null);
@@ -67,7 +77,7 @@ export function OrderPage({ menu, table }: { menu: Menu; table: number }) {
 
   useEffect(() => {
     document.body.classList.add('has-cart-bar');
-    document.title = `Table ${table} · ${menu.restaurant.name}`;
+    document.title = `Meja ${table} · ${menu.restaurant.name}`;
     return () => document.body.classList.remove('has-cart-bar');
   }, [table, menu.restaurant.name]);
 
@@ -81,11 +91,38 @@ export function OrderPage({ menu, table }: { menu: Menu; table: number }) {
     });
   }, []);
 
+  const addWithOptions = useCallback((item: MenuItem, optionIds: string[], qty: number) => {
+    const options = resolveOptions(item, optionIds);
+    if (!options) return;
+    const key = lineKey(item.id, options);
+    setCart((c) => ({ ...c, [key]: Math.min(99, (c[key] ?? 0) + qty) }));
+    setPicking(null);
+  }, []);
+  const closePicker = useCallback(() => setPicking(null), []);
+
   /* menu.items is sorted by category then name, so the cart and the receipt follow that order */
-  const lines = useMemo<OrderLine[]>(
-    () => menu.items.filter((i) => cart[i.id]).map((i) => ({ id: i.id, itemId: i.itemId, name: i.name, categoryId: i.categoryId, price: i.price, qty: cart[i.id] })),
-    [menu.items, cart],
-  );
+  const lines = useMemo<CartLine[]>(() => {
+    const rank = new Map(menu.items.map((item, i) => [item.id, { item, i }]));
+    return Object.entries(cart)
+      .flatMap(([key, qty]) => {
+        const { id, options: ids } = parseLineKey(key);
+        const found = rank.get(id);
+        const options = found && resolveOptions(found.item, ids);
+        if (!found || !options) return [];
+        const { item, i } = found;
+        const price = item.price + options.reduce((t, o) => t + o.price, 0);
+        const line: CartLine = { key, id, itemId: item.itemId, name: item.name, categoryId: item.categoryId, price, qty, ...(options.length ? { options } : {}) };
+        return [{ i, line }];
+      })
+      .sort((a, b) => a.i - b.i || a.line.key.localeCompare(b.line.key))
+      .map((x) => x.line);
+  }, [menu.items, cart]);
+  /* The menu card shows how many of an item are in the cart, whatever options were chosen. */
+  const qtyByItem = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const l of lines) m[l.id] = (m[l.id] ?? 0) + l.qty;
+    return m;
+  }, [lines]);
   const total = lines.reduce((t, l) => t + l.price * l.qty, 0);
   const count = lines.reduce((t, l) => t + l.qty, 0);
 
@@ -102,7 +139,7 @@ export function OrderPage({ menu, table }: { menu: Menu; table: number }) {
       const placed = await api.place({
         table,
         customerName: name,
-        items: lines.map((l) => ({ id: l.id, qty: l.qty })),
+        items: lines.map((l) => ({ id: l.id, qty: l.qty, ...(l.options ? { options: l.options.map((o) => o.id) } : {}) })),
         note: note.trim(),
         clientOrderId: clientOrderId.current,
       });
@@ -126,7 +163,7 @@ export function OrderPage({ menu, table }: { menu: Menu; table: number }) {
 
   return (
     <>
-      <TopBar name={menu.restaurant.name} right={<span className="pill brand">🪑 Table {table}</span>} />
+      <TopBar name={menu.restaurant.name} right={<span className="pill brand">🪑 Meja {table}</span>} />
 
       <main className="container order-layout">
         <section>
@@ -135,19 +172,19 @@ export function OrderPage({ menu, table }: { menu: Menu; table: number }) {
               <h1>
                 Menu<span className="jp-title">お品書き</span>
               </h1>
-              <p>Table {table} · your order goes straight to the kitchen</p>
+              <p>Meja {table} · pesanan Anda langsung masuk ke dapur</p>
             </div>
           </div>
 
           {menu.items.length ? (
-            <MenuGrid menu={menu} cart={cart} setQty={setQty} activeCat={activeCat} setActiveCat={setActiveCat} query={query} setQuery={setQuery} />
+            <MenuGrid menu={menu} cart={cart} qtyByItem={qtyByItem} setQty={setQty} onChoose={setPicking} activeCat={activeCat} setActiveCat={setActiveCat} query={query} setQuery={setQuery} />
           ) : (
             <EmptyMenu menu={menu} />
           )}
 
           <div className="section-title" id="myOrders">
-            <h2>Your orders</h2>
-            <span className="muted small">from this table</span>
+            <h2>Pesanan Anda</h2>
+            <span className="muted small">dari meja ini</span>
           </div>
           <div className="grid my-orders">
             <SentOrders orders={sent} menu={menu} />
@@ -172,26 +209,28 @@ export function OrderPage({ menu, table }: { menu: Menu; table: number }) {
         />
       </main>
 
+      {picking && <OptionPicker item={picking} onAdd={(ids, qty) => addWithOptions(picking, ids, qty)} onClose={closePicker} />}
+
       {modal?.kind === 'confirm' && (
         <Modal
-          title="Confirm your order"
-          sub={`Table ${table} · ${plural(count, 'item')}`}
+          title="Konfirmasi pesanan"
+          sub={`Meja ${table} · ${count} item`}
           onClose={closeModal}
           dismissable={!placing}
           actions={[
-            { label: 'Back', cls: 'ghost', disabled: placing, onClick: closeModal },
-            { label: placing ? 'Sending…' : 'Confirm order', cls: 'primary', disabled: placing, onClick: () => void placeOrder() },
+            { label: 'Kembali', cls: 'ghost', disabled: placing, onClick: closeModal },
+            { label: placing ? 'Mengirim…' : 'Kirim pesanan', cls: 'primary', disabled: placing, onClick: () => void placeOrder() },
           ]}
         >
           <div className={'field' + (nameError ? ' error' : '')}>
-            <label htmlFor="guestName">Your name</label>
+            <label htmlFor="guestName">Nama Anda</label>
             <input
               id="guestName"
               className="input"
               type="text"
               autoComplete="name"
               maxLength={60}
-              placeholder="So the staff can find your order"
+              placeholder="Agar staf bisa menemukan pesanan Anda"
               value={customerName}
               autoFocus={!customerName}
               onChange={(e) => {
@@ -202,7 +241,7 @@ export function OrderPage({ menu, table }: { menu: Menu; table: number }) {
                 if (e.key === 'Enter') void placeOrder();
               }}
             />
-            <span className="hint">{nameError ? 'Please enter your name' : 'Printed on the kitchen receipt with your table number'}</span>
+            <span className="hint">{nameError ? 'Mohon isi nama Anda' : 'Dicetak di struk dapur bersama nomor meja Anda'}</span>
           </div>
           <OrderLines items={lines} menu={menu} />
           {trimmedNote && <div className="note">📝 {trimmedNote}</div>}
@@ -212,7 +251,7 @@ export function OrderPage({ menu, table }: { menu: Menu; table: number }) {
               <span>{money(total)}</span>
             </div>
           </div>
-          <p className="muted small">The kitchen starts right away. You pay at the cashier when you're done.</p>
+          <p className="muted small">Dapur langsung mulai menyiapkan pesanan. Pembayaran dilakukan di kasir setelah selesai makan.</p>
         </Modal>
       )}
 
@@ -220,12 +259,12 @@ export function OrderPage({ menu, table }: { menu: Menu; table: number }) {
         <Modal
           cls="success"
           icon="🍜"
-          title="Order received!"
-          sub={`Receipt ${modal.order.receiptNumber} · Table ${table} · ${fmtTime(modal.order.createdAt)}`}
+          title="Pesanan diterima!"
+          sub={`Struk ${modal.order.receiptNumber} · Meja ${table} · ${fmtTime(modal.order.createdAt)}`}
           onClose={closeModal}
           actions={[
             {
-              label: 'Done',
+              label: 'Selesai',
               cls: 'primary',
               primary: true,
               onClick: () => {
@@ -235,9 +274,9 @@ export function OrderPage({ menu, table }: { menu: Menu; table: number }) {
             },
           ]}
         >
-          <span className="processing">The kitchen has your order</span>
+          <span className="processing">Dapur sudah menerima pesanan Anda</span>
           <p>
-            Thanks, <b>{modal.order.customerName}</b>. Mention receipt <b>{modal.order.receiptNumber}</b> or your table at the cashier when you pay.
+            Terima kasih, <b>{modal.order.customerName}</b>. Sebutkan nomor struk <b>{modal.order.receiptNumber}</b> atau nomor meja Anda di kasir saat membayar.
           </p>
           <OrderLines items={modal.order.items} menu={menu} />
         </Modal>

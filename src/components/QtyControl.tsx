@@ -15,7 +15,7 @@ export function QtyControl({ qty, onChange, small }: { qty: number; onChange: (q
 
   return (
     <span className={'qty' + (small ? ' sm' : '')}>
-      <button type="button" aria-label="Less" onClick={() => onChange(qty - 1)}>−</button>
+      <button type="button" aria-label="Kurangi" onClick={() => onChange(qty - 1)}>−</button>
       <input
         type="number"
         inputMode="numeric"
@@ -24,7 +24,7 @@ export function QtyControl({ qty, onChange, small }: { qty: number; onChange: (q
         max={99}
         step={1}
         value={text}
-        aria-label="Quantity"
+        aria-label="Jumlah"
         onChange={(e) => {
           setText(e.target.value);
           if (e.target.value !== '') onChange(clamp(e.target.value));
@@ -35,7 +35,7 @@ export function QtyControl({ qty, onChange, small }: { qty: number; onChange: (q
           if (e.key === 'Enter') e.currentTarget.blur();
         }}
       />
-      <button type="button" aria-label="More" onClick={() => onChange(qty + 1)}>+</button>
+      <button type="button" aria-label="Tambah" onClick={() => onChange(qty + 1)}>+</button>
     </span>
   );
 }

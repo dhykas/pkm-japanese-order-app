@@ -1,7 +1,8 @@
-/* Bindings and variables the Worker receives. Vars live in wrangler.jsonc,
- * secrets in .dev.vars (local) or `wrangler secret put` (deployed). */
+/* Settings the API receives. Locally they come from .dev.vars and wrangler.jsonc vars;
+ * on Vercel from the project's Environment Variables. */
 export interface Bindings {
-  ASSETS: Fetcher;
+  /** Static files, only present in the local Cloudflare dev server. Vercel serves them itself. */
+  ASSETS?: { fetch(req: Request): Promise<Response> };
   /** Secret. Never sent to the browser. */
   LOYVERSE_TOKEN?: string;
   /** Optional: which Loyverse store to sell from. Defaults to the first store. */

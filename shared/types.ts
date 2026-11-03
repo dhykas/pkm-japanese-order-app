@@ -17,6 +17,30 @@ export interface MenuItem {
   color: string | null;
   sku: string | null;
   description?: string;
+  /** Loyverse modifiers on the item, e.g. Kuah or Hot / Ice. The guest picks exactly one option of each. */
+  modifiers?: MenuModifier[];
+}
+
+export interface MenuModifier {
+  id: string;
+  name: string;
+  options: MenuModifierOption[];
+}
+
+export interface MenuModifierOption {
+  /** Loyverse modifier_option_id, written on the receipt line. */
+  id: string;
+  name: string;
+  /** Added to the item price. */
+  price: number;
+}
+
+/** A chosen modifier option as it appears on an order line. */
+export interface ChosenOption {
+  id: string;
+  modifier: string;
+  name: string;
+  price: number;
 }
 
 export interface Menu {
@@ -34,14 +58,18 @@ export interface OrderLine {
   itemId: string;
   name: string;
   categoryId: string;
+  /** Unit price including the chosen options. */
   price: number;
   qty: number;
+  /** Chosen modifier options, in the item's modifier order. Missing on orders placed before options existed. */
+  options?: ChosenOption[];
 }
 
 export interface NewOrderInput {
   table: number;
   customerName: string;
-  items: { id: string; qty: number }[];
+  /** options: one modifier option id per modifier of the item. */
+  items: { id: string; qty: number; options?: string[] }[];
   note?: string;
   /** Random id made by the browser, so a retried request returns the same receipt instead of a second one. */
   clientOrderId?: string;
